@@ -1,0 +1,9 @@
+{
+    "name_experiment":"t2m",
+    "target_variable": "2m_temperature",
+    "batch_size": 10,
+    "nb_epoch": 100,
+    "lr": 0.01,
+    "out_dim": 3,
+    "save_every": 100
+}
