@@ -7,13 +7,13 @@ from tqdm import tqdm
 def get_year(date: np.datetime64):
     return pd.Timestamp(date).year
 
-def format_forecast_features(xr_dataset):
-    input_data = []
-    for level in xr_dataset.level.values:
-        var_level = xr_dataset.sel(level=level).to_array().values.flatten()
-        var_level = np.nan_to_num(var_level)  # replace nan with 0
-        input_data.append(var_level)
-    return np.concatenate(input_data)
+def get_features_levels(xr_dataset):
+    # no loops 
+    all_levels = xr_dataset.to_array().values
+    all_levels = np.nan_to_num(all_levels)  # replace NaNs with 0
+    # Flatten the array across all levels and concatenate
+    input_data = all_levels.flatten()
+    return input_data
 
 def process_location_leadtime(forecast, observation, lat, lon, ltime_index, valid_years, folder):
     # Select data for specific lat/lon and lead time
@@ -21,21 +21,23 @@ def process_location_leadtime(forecast, observation, lat, lon, ltime_index, vali
     ground_truth = observation.sel(latitude=lat, longitude=lon)  # time extracted after
     l_time = forecast.prediction_timedelta.values[ltime_index].astype("timedelta64[h]").astype(int)
 
+    forecast_times = forecast_data.forecast_time.values[::2]
+    # select valid forecast times
+    train_data = forecast_data.sel(forecast_time=forecast_times)
+
     # Open file for writing dynamically
-    file_path = f'{folder}/data_OPT_lat={lat}_lon={lon}_lead={l_time}h.json'
+    file_path = f'{folder}/essai_OPT_lat={lat}_lon={lon}_lead={l_time}h.json'
     with open(file_path, 'w') as f:
         f.write("[\n")  # Start of JSON array
 
         # Loop over forecast times: 1 over 2 is selected
         first_entry = True
-        for forecast_time in forecast_data.forecast_time.values[::2]:
-            #print("forecast_loop",forecast_time)
-            train_data = forecast_data.sel(forecast_time=forecast_time)
+        for forecast_time in forecast_times: # 365 dates
+            train_data = forecast_data.sel(forecast_time=forecast_time) 
 
             # Loop over hindcast years: keep dates only within train years
-            valid_times = train_data.valid_time.compute().values
+            valid_times = train_data.valid_time.compute().values # 20 years 
             for i, date in enumerate(valid_times):
-                #print("hindcast_loop",date)
                 if get_year(date) not in valid_years:
                     continue
 
@@ -47,7 +49,7 @@ def process_location_leadtime(forecast, observation, lat, lon, ltime_index, vali
                     "lon": float(lon)
                 }
                 forecast_sel = train_data.isel(hindcast_year=i)
-                features = format_forecast_features(forecast_sel)
+                features = get_features_levels(forecast_sel)
                 dict_date["input"] = features.tolist()  # Ensure features is a list
 
                 # Add observation and ground truth for all variables 
@@ -64,6 +66,8 @@ def process_location_leadtime(forecast, observation, lat, lon, ltime_index, vali
                     f.write(",\n")
                 json.dump(dict_date, f)
                 first_entry = False
+                #break # Only one hindcast year is selected
+            #break # Only one forecast time is selected
                 
 
         f.write("\n]")  # End of JSON array
