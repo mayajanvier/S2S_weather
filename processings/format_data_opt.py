@@ -17,9 +17,10 @@ def get_features_levels(xr_dataset):
 
 def process_location_leadtime(forecast, observation, lat, lon, ltime_index, valid_years, folder):
     # Select data for specific lat/lon and lead time
-    forecast_data = forecast.sel(latitude=lat, longitude=lon).isel(prediction_timedelta=ltime_index)
+    l_time = forecast.prediction_timedelta.values[ltime_index]
+    forecast_data = forecast.sel(latitude=lat, longitude=lon, prediction_timedelta=l_time) #.isel(prediction_timedelta=ltime_index)
     ground_truth = observation.sel(latitude=lat, longitude=lon)  # time extracted after
-    l_time = forecast.prediction_timedelta.values[ltime_index].astype("timedelta64[h]").astype(int)
+    l_time = l_time.astype("timedelta64[h]").astype(int) # convert to int in hour
 
     forecast_times = forecast_data.forecast_time.values[::2]
     # select valid forecast times
@@ -54,7 +55,6 @@ def process_location_leadtime(forecast, observation, lat, lon, ltime_index, vali
 
                 # Add observation and ground truth for all variables 
                 for obs_var in obs_variables:
-                    #print("obs_var":obs_var)
                     fore_var = obs2forecast_var[obs_var]
                     fore_val = forecast_sel.sel(level=1000)[fore_var].values.item()
                     dict_date[f"mu_{obs_var}"] = fore_val
@@ -73,6 +73,13 @@ def process_location_leadtime(forecast, observation, lat, lon, ltime_index, vali
         f.write("\n]")  # End of JSON array
 
 if __name__ == "__main__":
+    ### OPTIMIZATION
+    #from pyinstrument import Profiler
+    #profiler = Profiler()
+    #profiler.reset()
+    #profiler.start()
+    ###
+
     # paths
     train_folder = '/home/majanvie/scratch/data/train'
     test_folder = '/home/majanvie/scratch/data/test'
@@ -102,3 +109,7 @@ if __name__ == "__main__":
                 process_location_leadtime(forecast_train, obs, lat, lon, lead_time_index, train_years, train_folder)
             break
         break
+
+    #profiler.stop()
+    #profiler.print()
+    #profiler.write_html('format_data_profiler.html')
