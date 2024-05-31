@@ -12,6 +12,7 @@ class PandasDataset(Dataset):
         self.sigma = dataframe[f"sigma_{target_column}"].values # scalar
         self.truth = dataframe[f"truth_{target_column}"].values # scalar
         self.input = dataframe["input"] # numpy arrays
+        self.forecast_time = dataframe["forecast_time"]
 
         # standardize input
         self.scaler = StandardScaler()
@@ -25,8 +26,9 @@ class PandasDataset(Dataset):
         sigma = torch.tensor(self.sigma[idx], dtype=torch.float)
         truth = torch.tensor(self.truth[idx], dtype=torch.float)
         input_data = torch.tensor(self.input[idx], dtype=torch.float)
+        forecast_time = str(self.forecast_time[idx]) #.astype(str)
         
-        return {'mu': mu, 'sigma': sigma, 'input': input_data, 'truth': truth}
+        return {'mu': mu, 'sigma': sigma, 'input': input_data, 'truth': truth, 'forecast_time': forecast_time}
 
 
 if __name__== "__main__":
