@@ -20,3 +20,13 @@ def crps_normal(dist: torch.distributions.Normal, sample: torch.Tensor):
     crps = std * centered_crps
 
     return crps
+
+
+def compute_crps_normal(model, batch):
+    mu = batch['mu']
+    sigma = batch['sigma']
+    X = batch['input']
+    y = batch['truth']
+    out_distrib = model(mu, sigma, X, y)
+    crps = crps_normal(out_distrib, y)
+    return crps
