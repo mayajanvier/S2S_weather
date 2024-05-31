@@ -10,7 +10,7 @@ class PandasDataset(Dataset):
         self.target_column = target_column
         self.mu = dataframe[f"mu_{target_column}"].values # scalar
         self.sigma = dataframe[f"sigma_{target_column}"].values # scalar
-        self.truth = dataframe["truth"].values # scalar
+        self.truth = dataframe[f"truth_{target_column}"].values # scalar
         self.input = dataframe["input"] # numpy arrays
 
         # standardize input
@@ -31,11 +31,9 @@ class PandasDataset(Dataset):
 
 if __name__== "__main__":
     data_folder = "../scratch/"
-    train_data = pd.read_json(data_folder+'data_2m_temperature.json')
-    feature_dim = len(train_data["input"][0]) #.shape[0] 
-    print(feature_dim)
+    train_data = pd.read_json(data_folder+'data_lat=-90.0_lon=0.0_lead=24h.json')
     train_data = PandasDataset(train_data, "2m_temperature")
-    train_loader = DataLoader(train_data, batch_size=10, shuffle=True)
+    train_loader = DataLoader(train_data, batch_size=1, shuffle=True)
 
     for batch in train_loader:
         print("SHAPES")
