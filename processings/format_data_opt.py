@@ -3,6 +3,7 @@ import xarray as xr
 import json
 import pandas as pd
 from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor
 
 def get_year(date: np.datetime64):
     return pd.Timestamp(date).year
@@ -15,7 +16,7 @@ def get_features_levels(xr_dataset):
     input_data = all_levels.flatten()
     return input_data
 
-def process_location_leadtime(forecast, observation, lat, lon, ltime_index, valid_years, folder):
+def format_train_data(forecast, observation, lat, lon, ltime_index, valid_years, folder):
     # Select data for specific lat/lon and lead time
     l_time = forecast.prediction_timedelta.values[ltime_index]
     forecast_data = forecast.sel(latitude=lat, longitude=lon, prediction_timedelta=l_time) #.isel(prediction_timedelta=ltime_index)
@@ -27,7 +28,7 @@ def process_location_leadtime(forecast, observation, lat, lon, ltime_index, vali
     train_data = forecast_data.sel(forecast_time=forecast_times)
 
     # Open file for writing dynamically
-    file_path = f'{folder}/essai_OPT_lat={lat}_lon={lon}_lead={l_time}h.json'
+    file_path = f'{folder}/PPE_OPT_lat={lat}_lon={lon}_lead={l_time}h.json'
     with open(file_path, 'w') as f:
         f.write("[\n")  # Start of JSON array
 
@@ -72,6 +73,56 @@ def process_location_leadtime(forecast, observation, lat, lon, ltime_index, vali
 
         f.write("\n]")  # End of JSON array
 
+def format_test_data(forecast, observation, lat, lon, ltime_index, valid_years, folder):
+    # Select data for specific lat/lon and lead time
+    l_time = forecast.prediction_timedelta.values[ltime_index]
+    forecast_data = forecast.sel(latitude=lat, longitude=lon, prediction_timedelta=l_time) #.isel(prediction_timedelta=ltime_index)
+    ground_truth = observation.sel(latitude=lat, longitude=lon)  # time extracted after
+    l_time = l_time.astype("timedelta64[h]").astype(int) # convert to int in hour
+
+    forecast_times = forecast_data.time.values #[::2]
+    print(forecast_times.shape)
+    # select valid forecast times
+    train_data = forecast_data.sel(time=forecast_times)
+
+    # Open file for writing dynamically
+    file_path = f'{folder}/PPE_test_lat={lat}_lon={lon}_lead={l_time}h.json'
+    with open(file_path, 'w') as f:
+        f.write("[\n")  # Start of JSON array
+
+        # Loop over forecast times: 1 over 2 is selected
+        first_entry = True
+        for forecast_time in forecast_times: # 365 dates
+            if get_year(forecast_time) not in valid_years:
+                continue
+            test_data = forecast_data.sel(time=forecast_time)
+            dict_date = {
+                #"date": str(date),
+                "forecast_time": str(forecast_time),
+                "lead_time": int(l_time),
+                "lat": float(lat),
+                "lon": float(lon)
+            }
+            features = get_features_levels(test_data)
+            dict_date["input"] = features.tolist()  # Ensure features is a list
+
+            # Add observation and ground truth for all variables 
+            for obs_var in obs_variables:
+                fore_var = obs2forecast_var[obs_var]
+                fore_val = test_data.sel(level=1000)[fore_var].values.item()
+                dict_date[f"mu_{obs_var}"] = fore_val
+                dict_date[f"sigma_{obs_var}"] = 0
+                dict_date[f"truth_{obs_var}"] = ground_truth.sel(time=forecast_time)[obs_var].values.item()
+
+            # Write dict_date to file
+            if not first_entry:
+                f.write(",\n")
+            json.dump(dict_date, f)
+            first_entry = False
+
+        f.write("\n]")  # End of JSON array
+
+
 if __name__ == "__main__":
     ### OPTIMIZATION
     #from pyinstrument import Profiler
@@ -106,7 +157,10 @@ if __name__ == "__main__":
     for lat in tqdm(lats, desc='Latitudes'):
         for lon in tqdm(lons, desc='Longitudes', leave=False):
             for lead_time_index in lead_time_indices:
-                process_location_leadtime(forecast_train, obs, lat, lon, lead_time_index, train_years, train_folder)
+                with ProcessPoolExecutor(6) as exe:
+                    #exe.submit(format_train_data(forecast_train, obs, lat, lon, lead_time_index, train_years, train_folder))
+                    exe.submit(format_test_data(forecast_test, obs, lat, lon, lead_time_index, test_years, test_folder))
+
             break
         break
 
