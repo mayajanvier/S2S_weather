@@ -36,6 +36,7 @@ with open(results_file_path, 'w') as f:
     f.write("[\n")  # Start of JSON array
     first_entry = True
 
+    crps_list = []
     for batch in test_data:
         # TODO: add metrics 
         crps_var = compute_crps_normal(model, batch).detach().numpy()[0]
@@ -43,12 +44,23 @@ with open(results_file_path, 'w') as f:
             "forecast_time": batch["forecast_time"],
             "crps": float(crps_var)
             }
-
+        crps_list.append(crps_var)
         if not first_entry:
             f.write(",\n")
         json.dump(dict_date, f)
         first_entry = False
-    f.write("\n]")  # End of JSON array
+
+    # Compute mean CRPS
+    dict_mean = {
+        "forecast_time": "mean",
+        "crps": float(sum(crps_list)/len(crps_list))
+        }
+    if not first_entry:
+        f.write(",\n")
+    json.dump(dict_mean, f)
+
+    # End of JSON array
+    f.write("\n]")  
 
 
 
