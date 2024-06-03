@@ -31,10 +31,25 @@ class PandasDataset(Dataset):
         return {'mu': mu, 'sigma': sigma, 'input': input_data, 'truth': truth, 'forecast_time': forecast_time}
 
 
+
+def compute_wind_speed(dataframe):
+    dataframe["mu_10m_wind_speed"] = np.sqrt(
+        dataframe["mu_10m_u_component_of_wind"]**2 + dataframe["mu_10m_v_component_of_wind"]**2
+    )
+    dataframe["sigma_10m_wind_speed"] = np.sqrt(
+        dataframe["sigma_10m_u_component_of_wind"]**2 + dataframe["sigma_10m_v_component_of_wind"]**2
+    )
+    dataframe["truth_10m_wind_speed"] = np.sqrt(
+        dataframe["truth_10m_u_component_of_wind"]**2 + dataframe["truth_10m_v_component_of_wind"]**2
+    )
+    return dataframe
+
 if __name__== "__main__":
-    data_folder = "../scratch/"
-    train_data = pd.read_json(data_folder+'data_lat=-90.0_lon=0.0_lead=24h.json')
-    train_data = PandasDataset(train_data, "2m_temperature")
+    data_folder = "../scratch/data/train/"
+    train_data = pd.read_json(data_folder+"PPE_OPT_lat=-90.0_lon=0.0_lead=24h.json")
+    train_data = compute_wind_speed(train_data)
+    print(train_data.shape)
+    train_data = PandasDataset(train_data, "10m_wind_speed")
     train_loader = DataLoader(train_data, batch_size=1, shuffle=True)
 
     for batch in train_loader:

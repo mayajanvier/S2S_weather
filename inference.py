@@ -2,7 +2,7 @@ import pandas as pd
 from metrics import compute_crps_normal
 import torch
 import json
-from processings.dataset import PandasDataset
+from processings.dataset import PandasDataset, compute_wind_speed
 from torch.utils.data import DataLoader
 from model import MOS
 
@@ -19,6 +19,7 @@ out_dim = train_params["out_dim"]
 
 # Load and format test data 
 test = pd.read_json(test_params["test_file_path"])
+test = compute_wind_speed(test)
 var = train_params["target_variable"] # one model per variable 
 test_data = PandasDataset(test, var)
 test_data = DataLoader(test_data, batch_size=1, shuffle=True)

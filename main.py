@@ -1,6 +1,6 @@
 import pandas as pd
 from model import MOS
-from processings.dataset import PandasDataset
+from processings.dataset import PandasDataset, compute_wind_speed
 from train import train, create_training_folder
 from torch.utils.data import DataLoader
 from metrics import crps_normal
@@ -25,9 +25,11 @@ def main():
     folder = create_training_folder(name_experiment)
 
     # load data
-    data_folder = "../scratch/"
-    data_path = data_folder+f'data_{target_column}.json'
+    data_folder = "../scratch/data/train/"
+    # TODO: change this to the correct path
+    data_path = data_folder+f'PPE_OPT_lat=-90.0_lon=0.0_lead=24h.json'
     train_data  = pd.read_json(data_path)
+    train_data = compute_wind_speed(train_data)
     feature_dim = len(train_data["input"][0])
 
     # build dataloader
@@ -41,7 +43,7 @@ def main():
     # save parametrization of training
     params["data_path"] = data_path
     params["feature_dim"] = feature_dim
-    params["metric"] = "CRPS_Normal"
+    params["metric"] = "CRPS_Normal" # TODO les noms faire liste lien comme a dreem, pareil pour model 
     with open(folder+"/params.json", "w") as fp:
         json.dump(params, fp)
 
