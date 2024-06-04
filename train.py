@@ -10,6 +10,7 @@ import os
 from torch.utils.data import DataLoader, TensorDataset
 from processings.dataset import PandasDataset, compute_wind_speed
 from sklearn.model_selection import train_test_split
+import wandb
 
 def create_training_folder(name):
     # Define a base directory 
@@ -21,7 +22,20 @@ def create_training_folder(name):
     return new_folder
 
 
-def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, save_every=50):
+def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, target_column, batch_size, save_every=50):
+    # Weight and Biases setup
+    wandb.init(
+    project = f"S2S_train_MOS", # set the wandb project where this run will be logged
+    name = name_experiment,     # give the run a name
+    config={                    # track hyperparameters and run metadata
+    "learning_rate": lr,
+    "architecture": "MOS",
+    "variable": target_column,
+    "epochs": nb_epoch,
+    "batch_size": batch_size
+    }
+    )
+    
     optimizer = optim.Adam(model.parameters(), lr=lr)
     train_losses = []
     val_losses = []
@@ -60,6 +74,9 @@ def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folde
         epoch_loss = running_loss / len(train_loader)
         print(f'Epoch [{epoch + 1}/{nb_epoch}], Loss: {epoch_loss:.4f}, Val Loss: {val_loss:.4f}')
 
+        # log metrics to wandb
+        wandb.log({"Train loss": epoch_loss, "Validation loss": val_loss})
+
         # save epoch losses to csv file
         val_losses.append(val_loss.item())
         train_losses.append(epoch_loss.item())
@@ -73,7 +90,10 @@ def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folde
 
     # save final model        
     torch.save(model.state_dict(), result_folder+f'/model_{epoch}.pth')
-        
+    #torch.save(model.state_dict(), os.path.join(wandb.run.dir, "model.pth")) # in wandb
+
+    wandb.finish()
+   
 if __name__== "__main__":
     # run pipeline for training
     # load data

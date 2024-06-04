@@ -66,6 +66,9 @@ def main():
         lr=lr,
         criterion=criterion,
         result_folder=folder,
+        name_experiment=name_experiment,
+        target_column=target_column,
+        batch_size=batch_size,
         save_every=save_every
         )
 
