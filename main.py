@@ -5,6 +5,7 @@ from train import train, create_training_folder
 from torch.utils.data import DataLoader
 from metrics import crps_normal
 import json
+from sklearn.model_selection import train_test_split
 
 
 def main():
@@ -32,9 +33,16 @@ def main():
     train_data = compute_wind_speed(train_data)
     feature_dim = len(train_data["input"][0])
 
-    # build dataloader
+    # separate train and validation randomly
+    train_data, val_data = train_test_split(train_data, test_size=0.2, random_state=42, shuffle=True)
+    train_indices, val_indices = train_data.index.tolist(), val_data.index.tolist()
+
+    # build dataloaders
     train_data   = PandasDataset(train_data, target_column=target_column)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+
+    val_data = PandasDataset(val_data, target_column=target_column)
+    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True)
 
     # model setup and training
     criterion = crps_normal
@@ -44,12 +52,15 @@ def main():
     params["data_path"] = data_path
     params["feature_dim"] = feature_dim
     params["metric"] = "CRPS_Normal" # TODO les noms faire liste lien comme a dreem, pareil pour model 
+    params["train_indices"] = train_indices
+    params["val_indices"] = val_indices
     with open(folder+"/params.json", "w") as fp:
         json.dump(params, fp)
 
     # training
     train(
         train_loader,
+        val_loader,
         model=model,
         nb_epoch=nb_epoch,
         lr=lr,

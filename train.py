@@ -8,7 +8,8 @@ from metrics import crps_normal
 import pandas as pd 
 import os
 from torch.utils.data import DataLoader, TensorDataset
-from processings.dataset import PandasDataset
+from processings.dataset import PandasDataset, compute_wind_speed
+from sklearn.model_selection import train_test_split
 
 def create_training_folder(name):
     # Define a base directory 
@@ -20,12 +21,13 @@ def create_training_folder(name):
     return new_folder
 
 
-def train(train_loader, model, nb_epoch, lr, criterion, result_folder, save_every=50):
+def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, save_every=50):
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    
+    train_losses = []
+    val_losses = []
     for epoch in range(nb_epoch):
         model.train()
-        running_loss = 0
+        running_loss = 0.0
 
         for batch in train_loader:
             mu = batch['mu']
@@ -41,12 +43,28 @@ def train(train_loader, model, nb_epoch, lr, criterion, result_folder, save_ever
 
             running_loss += loss
 
-        epoch_loss = running_loss / len(train_loader)
-        print(f'Epoch [{epoch + 1}/{nb_epoch}], Loss: {epoch_loss:.4f}')
+        # validation each epoch
+        model.eval()
+        with torch.no_grad():
+            val_loss = 0.0
+            for val_batch in val_loader:
+                val_mu = val_batch['mu']
+                val_sigma = val_batch['sigma']
+                val_X = val_batch['input']
+                val_y = val_batch['truth']
+                val_out_distrib = model(val_mu, val_sigma, val_X, val_y)
+                val_loss += criterion(val_out_distrib, val_y).mean()      
+        model.train()
 
-        # save epoch loss to csv file
-        with open(result_folder+'/loss.csv', 'a') as f:
-            f.write(f'{epoch},{epoch_loss}\n')
+        val_loss = val_loss / len(val_loader)
+        epoch_loss = running_loss / len(train_loader)
+        print(f'Epoch [{epoch + 1}/{nb_epoch}], Loss: {epoch_loss:.4f}, Val Loss: {val_loss:.4f}')
+
+        # save epoch losses to csv file
+        val_losses.append(val_loss.item())
+        train_losses.append(epoch_loss.item())
+        L = pd.DataFrame({'train_loss': train_losses, 'val_loss': val_losses})
+        L.to_csv(result_folder+'/loss.csv', index=False)
 
         # save model every save_every epochs
         if epoch > 0:
@@ -59,18 +77,25 @@ def train(train_loader, model, nb_epoch, lr, criterion, result_folder, save_ever
 if __name__== "__main__":
     # run pipeline for training
     # load data
-    data_folder = "../scratch/"
-    train_data = pd.read_json(data_folder+'data_2m_temperature.json')
+    data_folder = "../scratch/data/train/"
+    train_data = pd.read_json(data_folder+'PPE_OPT_lat=-90.0_lon=0.0_lead=24h.json')
+    train_data = compute_wind_speed(train_data)
 
-    # build dataloader
+    # separate train and validation randomly
+    train_data, val_data = train_test_split(train_data, test_size=0.2, random_state=42, shuffle=True)
+
+    # build dataloaders
     train_data = PandasDataset(train_data, "2m_temperature")
     train_loader = DataLoader(train_data, batch_size=10, shuffle=True)
+
+    val_data = PandasDataset(val_data, "2m_temperature")
+    val_loader = DataLoader(val_data, batch_size=10, shuffle=True)
 
     # model setup and training
     folder = create_training_folder("t2m")
     criterion = crps_normal
     model = MOS(50,3)
-    train(train_loader, model, 100, 0.01, criterion, folder)
+    train(train_loader, val_loader, model, 10, 0.01, criterion, folder)
 
 
 
