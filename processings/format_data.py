@@ -24,16 +24,14 @@ def compute_wind_speed(dataframe):
 
 
 ### WeatherDataset methods
-def get_lead_shape(forecast, observation, ltime_index, valid_years, valid_months):
-    # Select lead time
-    forecast_data = forecast.isel(prediction_timedelta=ltime_index)
-    # Select valid years and month
-    t = forecast_data.sel(time=(
-        (forecast_data.time.dt.month >= valid_months[0]) &
-        (forecast_data.time.dt.month <= valid_months[-1]) &
-        (forecast_data.time.dt.year >= valid_years[0]) &
-        (forecast_data.time.dt.year <= valid_years[-1])))
-    return forecast_data, t.time.shape[0] 
-
-
+def compute_wind_speedxr(dataset, name):
+    """Computes wind speed in place"""
+    if name =="data":
+        u_name = 'u_component_of_wind'
+        v_name = 'v_component_of_wind'
+    elif name == "obs":
+        u_name = "10m_u_component_of_wind"
+        v_name = "10m_v_component_of_wind"
+    dataset['10m_wind_speed'] = (dataset[u_name]**2 + dataset[v_name]**2)**0.5
+    dataset['10m_wind_speed'].name = '10_wind_speed'
 
