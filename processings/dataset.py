@@ -118,6 +118,7 @@ class WeatherDataset:
         # get features at right format without wind speed
         data = dataset.to_array().values # (n_vars, n_levels, n_lat, n_lon)
         data = data.reshape(-1, data.shape[2], data.shape[3]) # (n_levels*n_vars, n_lat, n_lon)
+        data = data[~np.isnan(data).all(axis=(1,2))] # drop NaN of specific humidity at levels 10,50,100
         features = torch.tensor(data, dtype=torch.float)
 
         # compute wind 
