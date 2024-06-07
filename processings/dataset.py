@@ -4,13 +4,12 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from format_data import get_year, get_month, compute_wind_speedxr
+from format_data import compute_wind_speedxr, adjust_date
 import xarray as xr
 import pathlib
 import re
 from datetime import datetime
 
-VALIDATION_DAY_BEGIN = 25
 
 class PandasDataset(Dataset):
     def __init__(self, dataframe, target_column):
@@ -59,6 +58,7 @@ class WeatherDataset:
         self.forecast_variable = self.obs2forecast_var[self.target_variable]
         self.valid_months = np.arange(valid_months[0], valid_months[1] + 1)
         self.valid_years = np.arange(valid_years[0], valid_years[1] + 1)
+        self.validation_year_begin = self.valid_years[len(self.valid_years)*9//10]
         self.subset = subset
 
         # Open observations
@@ -78,29 +78,55 @@ class WeatherDataset:
 
             # Iterate over remaining time dimension
             for time_idx in range(dataset.sizes["forecast_time"]):
-                valid_time = dataset.forecast_time.values[time_idx] 
+                valid_time = pd.to_datetime(dataset.forecast_time.values[time_idx])
+                if self.subset == "train" or self.subset == "val": # correct year
+                    valid_time = adjust_date(valid_time, dataset.hindcast_year.values.item())
                 # keep only within valid years and month
-                if get_year(valid_time) not in self.valid_years:
+                if valid_time.year not in self.valid_years:
                     continue
-                elif get_month(valid_time) not in self.valid_months:   
+                elif valid_time.month not in self.valid_months:   
                     continue
                 self.data_index.append(
-                    (f, time_idx, pd.to_datetime(valid_time))
+                    (f, time_idx, valid_time)
                 )
-
+        
         # Adapt index for train or val
         if self.subset == "train":
             self.data_index = [x for x in self.data_index
-                if x[2].day < VALIDATION_DAY_BEGIN 
+                if x[2].year < self.validation_year_begin 
             ]
         elif self.subset == "val":
+            # TODO year validation
             self.data_index = [x for x in self.data_index
-                if x[2].day >= VALIDATION_DAY_BEGIN 
+                if x[2].year >= self.validation_year_begin 
             ]
         elif self.subset == "test":
             pass
         else:
             raise ValueError("Unrecognized subset")
+
+        # normalize
+        self.scaler = StandardScaler()
+        self.fit_scaler()
+
+    def fit_scaler(self):
+        """Compute the mean and std of the dataset for normalization."""
+        all_features = []
+        for file, forecast_idx_in_file, valid_time in self.data_index:
+            dataset = xr.open_dataset(file)
+            if self.subset == "test":
+                dataset = dataset.rename({'time': 'forecast_time'})
+            dataset = dataset.isel(prediction_timedelta=self.lead_time_idx, forecast_time=forecast_idx_in_file)
+
+            # Extract features and reshape
+            data = dataset.to_array().values # (n_vars, n_levels, n_lat, n_lon)
+            data = data.reshape(-1, data.shape[2], data.shape[3]) # (n_levels*n_vars, n_lat, n_lon)
+            data = data[~np.isnan(data).all(axis=(1,2))] # drop NaN of specific humidity at levels 10,50,100
+            all_features.append(data)
+
+        all_features = np.concatenate(all_features, axis=0) # Concatenate along the feature dimension
+        all_features = all_features.reshape(all_features.shape[0], -1) # Flatten spatial dimensions
+        self.scaler.fit(all_features)
 
     def __len__(self):
         return len(self.data_index)
@@ -119,6 +145,11 @@ class WeatherDataset:
         data = dataset.to_array().values # (n_vars, n_levels, n_lat, n_lon)
         data = data.reshape(-1, data.shape[2], data.shape[3]) # (n_levels*n_vars, n_lat, n_lon)
         data = data[~np.isnan(data).all(axis=(1,2))] # drop NaN of specific humidity at levels 10,50,100
+        # Normalize features
+        shapes = data.shape
+        data = data.reshape(data.shape[0], -1) # Flatten spatial dimensions
+        data = self.scaler.transform(data) # Normalize features
+        data = data.reshape(shapes[0], shapes[1], shapes[2]) # Reshape back
         features = torch.tensor(data, dtype=torch.float)
 
         # compute wind 
