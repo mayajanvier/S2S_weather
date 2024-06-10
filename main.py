@@ -1,11 +1,12 @@
 import pandas as pd
-from model import MOS
-from processings.dataset import PandasDataset, compute_wind_speed
+from model import MOS, SpatialMOS
+from processings.dataset import PandasDataset, WeatherDataset
 from train import train, create_training_folder
 from torch.utils.data import DataLoader
 from metrics import crps_normal
 import json
 from sklearn.model_selection import train_test_split
+import xarray as xr
 
 
 def main():
@@ -73,5 +74,103 @@ def main():
         )
 
 
+def main_spatial(variable, lead_time, valid_years, valid_months, batch_size, lr, nb_epoch, name_experiment, base_dir):
+    """ Train models for this variable, lead_time, 
+    on valid months data, for all latitude/longitude """
+
+    data_folder = "/home/majanvie/scratch/data/raw"
+    train_folder = f"{data_folder}/train"
+    obs_folder = f"{data_folder}/obs"
+
+    folder = create_training_folder(name_experiment, base_dir)
+    
+    train_dataset = WeatherDataset(
+        data_path=train_folder,
+        obs_path=obs_folder,
+        target_variable=variable,
+        lead_time_idx=lead_time,
+        valid_years=valid_years,
+        valid_months=valid_months,
+        subset="train")
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    val_dataset = WeatherDataset(
+        data_path=train_folder,
+        obs_path=obs_folder,
+        target_variable=variable,
+        lead_time_idx=lead_time,
+        valid_years=valid_years,
+        valid_months=valid_months,
+        subset="val")
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+
+    # model setup and training
+    model = SpatialMOS(47, 121, 240, 3)
+    criterion = crps_normal
+
+    # write setup in json
+    params = {
+        "variable": variable,
+        "lead_time": lead_time,
+        "valid_years": valid_years,
+        "valid_months": valid_months,
+        "batch_size": batch_size,
+        "lr": lr,
+        "nb_epoch": nb_epoch,
+        "name_experiment": name_experiment,
+        "base_dir": base_dir
+    }
+    with open(folder+"/params.json", "w") as fp:
+        json.dump(params, fp)
+
+    # training
+    train(
+        train_loader,
+        val_loader,
+        model,
+        nb_epoch=nb_epoch,
+        lr=lr,
+        criterion=criterion,
+        result_folder=folder,
+        name_experiment=name_experiment,
+        target_column=variable,
+        batch_size=batch_size,
+        save_every=50)
+    
+    
+
+
 if __name__ == "__main__":
-    main()
+    ### Spatial year 
+    # base_dir = "training_results/spatial_year"
+    # for variable in ["2m_temperature", "10m_wind_speed"]:
+    #     main_spatial(
+    #         variable,
+    #         lead_time=28,
+    #         valid_years=[1996,2017],
+    #         valid_months=[1,12],
+    #         batch_size=128,
+    #         lr=0.01,
+    #         nb_epoch=15,
+    #         name_experiment=f"spatial_year_{variable}_lead={28}",
+    #         base_dir=base_dir)
+    
+    ### Spatial month
+    base_dir = "training_results/spatial_month"
+    for month in range(1,13):
+        print(f"Month {month}")
+        for variable in ["2m_temperature", "10m_wind_speed"]:
+            print(f"Variable {variable}")
+            main_spatial(
+                variable,
+                lead_time=28,
+                valid_years=[1996,2017],
+                valid_months=[month, month],
+                batch_size=128,
+                lr=0.01,
+                nb_epoch=15,
+                name_experiment=f"spatial_month{month}_{variable}_lead={28}",
+                base_dir=base_dir)
+
+
+    ### Spatial month rolling window 
