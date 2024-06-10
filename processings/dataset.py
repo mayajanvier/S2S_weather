@@ -4,7 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from format_data import compute_wind_speedxr, adjust_date
+from .format_data import compute_wind_speedxr, adjust_date, compute_wind_speed
 import xarray as xr
 import pathlib
 import re

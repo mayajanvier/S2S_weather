@@ -2,6 +2,7 @@ import netCDF4
 import numpy as np
 import xarray as xr
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 
 def get_year(date: np.datetime64):
     return pd.Timestamp(date).year
@@ -35,3 +36,10 @@ def compute_wind_speedxr(dataset, name):
     dataset['10m_wind_speed'] = (dataset[u_name]**2 + dataset[v_name]**2)**0.5
     dataset['10m_wind_speed'].name = '10_wind_speed'
 
+
+def adjust_date(forecast_time, hindcast_year):
+    """ Manage invalid leap years delta"""
+    year_delta = relativedelta(years=hindcast_year)
+    new_date = forecast_time + year_delta
+    return new_date
+    
