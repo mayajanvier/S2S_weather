@@ -71,23 +71,28 @@ class WeatherDataset:
         self.data_index = []
         for f in files:
             data = xr.open_dataset(f)
-            if self.subset == "test":
-                # rename time to forecast_time
-                data = data.rename({'time': 'forecast_time'})
             dataset = data.isel(prediction_timedelta=self.lead_time_idx) # select lead time
 
             # Iterate over remaining time dimension
-            for time_idx in range(dataset.sizes["forecast_time"]):
-                valid_time = pd.to_datetime(dataset.forecast_time.values[time_idx])
-                if self.subset == "train" or self.subset == "val": # correct year
-                    valid_time = adjust_date(valid_time, dataset.hindcast_year.values.item())
-                # keep only within valid years and month
+            if self.subset == "test":
+                time_size = dataset.sizes["time"]
+            else:
+                time_size = dataset.sizes["forecast_time"]
+
+            for time_idx in range(time_size):
+                if self.subset == "test":
+                    forecast_time = pd.to_datetime(dataset.isel(time=time_idx).time.values)
+                    valid_time = pd.to_datetime(dataset.isel(time=time_idx).valid_time.values)
+                else:
+                    forecast_time = pd.to_datetime(dataset.isel(forecast_time=time_idx).time.values)
+                    valid_time = pd.to_datetime(dataset.isel(forecast_time=time_idx).valid_time.values)
+            
                 if valid_time.year not in self.valid_years:
                     continue
                 elif valid_time.month not in self.valid_months:   
                     continue
                 self.data_index.append(
-                    (f, time_idx, valid_time)
+                    (f, time_idx, valid_time, forecast_time)
                 )
         
         # Adapt index for train or val
@@ -112,7 +117,7 @@ class WeatherDataset:
     def fit_scaler(self):
         """Compute the mean and std of the dataset for normalization."""
         all_features = []
-        for file, forecast_idx_in_file, valid_time in self.data_index:
+        for file, forecast_idx_in_file, valid_time, forecast_time in self.data_index:
             dataset = xr.open_dataset(file)
             if self.subset == "test":
                 dataset = dataset.rename({'time': 'forecast_time'})
@@ -132,7 +137,7 @@ class WeatherDataset:
         return len(self.data_index)
 
     def __getitem__(self, idx):
-        file, forecast_idx_in_file, valid_time = self.data_index[idx]
+        file, forecast_idx_in_file, valid_time, forecast_time = self.data_index[idx]
         # select forecast data
         dataset = xr.open_dataset(file)
         if self.subset == "test":
@@ -161,9 +166,13 @@ class WeatherDataset:
         mu = torch.tensor(dataset.sel(level=1000)[self.forecast_variable].values, dtype=torch.float) # (n_lat, n_lon)
         sigma = torch.tensor(0, dtype=torch.float)
         valid_time = str(valid_time)
+        forecast_time = str(forecast_time)
         # get associated ground truth
         truth = torch.tensor(truth[self.target_variable].values.T, dtype=torch.float) # (n_lat, n_lon)
-        return {'mu': mu, 'sigma': sigma, 'input': features, 'truth': truth, 'valid_time': valid_time}
+        return {
+            'mu': mu, 'sigma': sigma, 'input': features, 'truth': truth,
+            'valid_time': valid_time, "lead_time": self.lead_time_idx, "forecast_time": forecast_time
+            }   
 
 
 
@@ -221,6 +230,7 @@ if __name__== "__main__":
     for batch in test_loader:
         print("SHAPES")
         print(batch['mu'].shape, batch['sigma'].shape, batch['input'].shape, batch['truth'].shape)
+        print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
         print(" ")
         break
 
@@ -237,6 +247,7 @@ if __name__== "__main__":
     for batch in train_loader:
         print("SHAPES")
         print(batch['mu'].shape, batch['sigma'].shape, batch['input'].shape, batch['truth'].shape)
+        print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
         print(" ")
         break
 
