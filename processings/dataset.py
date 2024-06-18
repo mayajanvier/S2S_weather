@@ -63,6 +63,8 @@ class WeatherDataset:
 
         # Open observations
         self.obs = xr.open_mfdataset(obs_path + '/*.nc', combine='by_coords')
+        self.latitude = self.obs.latitude.values
+        self.longitude = self.obs.longitude.values
 
         # Build index of counts for files.
         data_path = pathlib.Path(data_path)

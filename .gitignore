@@ -1,2 +1,8 @@
 __pycache__
+*.log
+*.out
+*.sbatch
+wandb
+/data_tests.ipynb
+/training_results/
 
