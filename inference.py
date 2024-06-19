@@ -1,12 +1,13 @@
 import pandas as pd 
 import numpy as np
 import xarray as xr
-from metrics import compute_crps_normal
+from metrics import crps_normal
 import torch
 import json
 from processings.dataset import PandasDataset, WeatherDataset, compute_wind_speed
 from torch.utils.data import DataLoader
 from model import MOS, SpatialMOS
+from torch.distributions import Normal
 
 def MOS_inference(model, batch):
     param_folder = "parameters/"
@@ -66,10 +67,11 @@ def MOS_inference(model, batch):
         f.write("\n]")  
 
 
-def SpatialMOS_inference(lead_time, valid_years, epoch=14):
+def SpatialMOS_inference(lead_time, valid_years, train_years, epoch=14):
     data_folder = "/home/majanvie/scratch/data/raw"
     test_folder = f"{data_folder}/test"
     obs_folder = f"{data_folder}/obs"
+    climato_folder = f"{obs_folder}/climato"
 
     base_dir = "training_results/spatial_month"
     train_index = 2
@@ -79,6 +81,8 @@ def SpatialMOS_inference(lead_time, valid_years, epoch=14):
         for variable in ["2m_temperature", "10m_wind_speed"]:
             print(f"Variable {variable}")
             model_folder = f"{base_dir}/training_{train_index}_spatial_month{month}_{variable}_lead={lead_time}"
+            climato_path = f"{climato_folder}/{variable}_{train_years[0]}_{train_years[-1]}_month{month}_lead{lead_time}.nc"
+            climato = xr.open_dataset(climato_path)
 
             test_dataset = WeatherDataset(
                 data_path=test_folder,
@@ -105,10 +109,17 @@ def SpatialMOS_inference(lead_time, valid_years, epoch=14):
                 sigma = batch['sigma']
                 X = batch['input']
                 y = batch['truth']
+
+                valid_time = batch['valid_time']
+                valid_date = pd.to_datetime(valid_time).strftime('%m-%d')
+                mu_clim = torch.tensor(climato["mu"].sel(date=valid_date).values[0])
+                sigma_clim = torch.tensor(climato["sigma"].sel(date=valid_date).values[0])
+
                 out_distrib = model(mu, sigma, X, y)
-                
-                crps_var = compute_crps_normal(model, batch).detach().numpy()  # shape (1, lat, lon)
-                crps_climato = np.random.rand(*crps_var.shape)  # shape (1, lat, lon)
+                climato_distrib = Normal(mu_clim, sigma_clim)
+
+                crps_var = crps_normal(out_distrib,y).detach().numpy()  # shape (1, lat, lon)
+                crps_climato = crps_normal(climato_distrib,y).detach().numpy() # shape (1, lat, lon)
 
                 lead_time = batch['lead_time'].item()  
                 forecast_time = batch['forecast_time'][0]
@@ -119,7 +130,7 @@ def SpatialMOS_inference(lead_time, valid_years, epoch=14):
                     ds = xr.Dataset(
                         data_vars=dict(
                             crps_temperature=(["time", "latitude", "longitude"], crps_var),
-                            crps_climato=(["time", "latitude", "longitude"], crps_climato),
+                            crps_temperature_climato=(["time", "latitude", "longitude"], crps_climato),
                         ),
                         coords=dict(
                             longitude=("longitude", test_loader.dataset.longitude), # 1D array
@@ -131,7 +142,7 @@ def SpatialMOS_inference(lead_time, valid_years, epoch=14):
                     ds = xr.Dataset(
                         data_vars=dict(
                             crps_wind_speed=(["time", "latitude", "longitude"], crps_var),
-                            crps_climato=(["time", "latitude", "longitude"], crps_climato),
+                            crps_wind_speed_climato=(["time", "latitude", "longitude"], crps_climato),
                         ),
                         coords=dict(
                             longitude=("longitude", test_loader.dataset.longitude), # 1D array
@@ -158,7 +169,7 @@ def SpatialMOS_inference(lead_time, valid_years, epoch=14):
 
 
 if __name__ == "__main__":
-    SpatialMOS_inference(28, [2018,2022],epoch=14)
+    SpatialMOS_inference(28, [2018,2022],[1996,2017],epoch=14)
 
 
 

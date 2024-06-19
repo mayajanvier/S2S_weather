@@ -4,7 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from .format_data import compute_wind_speedxr, adjust_date, compute_wind_speed
+from .format_data import compute_wind_speedxr, compute_wind_speed, fit_norm_along_axis
 import xarray as xr
 import pathlib
 import re
@@ -111,6 +111,50 @@ class WeatherDataset:
             pass
         else:
             raise ValueError("Unrecognized subset")
+        
+        # build climatology by fitting gaussians on train data, date wise, 
+        # in a netcdf file, if not done already 
+        if self.subset == "train":
+            climato_path = f"{obs_path}/climato/{self.target_variable}_{self.valid_years[0]}_{self.valid_years[-1]}_month{self.valid_months[0]}_lead{self.lead_time_idx}.nc"
+            if not pathlib.Path(climato_path).exists():
+                climato = {}
+                for file, forecast_idx_in_file, valid_time, forecast_time in self.data_index:
+                    truth = self.obs.sel(time=valid_time)
+                    # compute wind 
+                    if self.target_variable == "10m_wind_speed":
+                        compute_wind_speedxr(truth,"obs")
+
+                    mu = truth[self.target_variable].values.T
+                    lead_time = self.lead_time_idx
+                    date = valid_time.strftime('%m-%d') # get date without year
+                    if date not in climato.keys():
+                        climato[date] = {"mu": [mu]}
+                    else:
+                        climato[date]["mu"].append(mu) 
+
+                # fit gaussians on mu for each date
+                climato_res = []
+                for date in climato.keys():
+                    mu = np.stack(climato[date]["mu"])
+                    mu_fit, sigma_fit = fit_norm_along_axis(mu, axis=0)
+                    mu_fit = mu_fit[np.newaxis, ...]
+                    sigma_fit = sigma_fit[np.newaxis, ...]
+                    ds = xr.Dataset(
+                        data_vars=dict(
+                            mu=(["date", "latitude", "longitude"], mu_fit),
+                            sigma=(["date", "latitude", "longitude"], sigma_fit),
+                        ),
+                        coords=dict(
+                            longitude=("longitude", self.longitude), # 1D array
+                            latitude=("latitude", self.latitude), # 1D array
+                            date=[date] # single item
+                        )
+                    )
+                    climato_res.append(ds)
+                
+                # save to csv
+                final_ds = xr.concat(climato_res, dim='date')
+                final_ds.to_netcdf(climato_path)
 
         # normalize
         self.scaler = StandardScaler()
@@ -218,58 +262,65 @@ if __name__== "__main__":
     test_folder = f"{data_folder}/test"
     obs_folder = f"{data_folder}/obs"
 
-    test_dataset = WeatherDataset(
-        data_path=test_folder,
-        obs_path=obs_folder,
-        target_variable="2m_temperature",
-        lead_time_idx=28,
-        valid_years=[2018,2022],
-        valid_months=[1,3],
-        subset="test")
+    # test_dataset = WeatherDataset(
+    #     data_path=test_folder,
+    #     obs_path=obs_folder,
+    #     target_variable="2m_temperature",
+    #     lead_time_idx=28,
+    #     valid_years=[2018,2022],
+    #     valid_months=[1,3],
+    #     subset="test")
     
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
-    print("Nb of training examples:",len(test_loader.dataset.data_index))
-    for batch in test_loader:
-        print("SHAPES")
-        print(batch['mu'].shape, batch['sigma'].shape, batch['input'].shape, batch['truth'].shape)
-        print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
-        print(" ")
-        break
+    # test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+    # print("Nb of training examples:",len(test_loader.dataset.data_index))
+    # for batch in test_loader:
+    #     print("SHAPES")
+    #     print(batch['mu'].shape, batch['sigma'].shape, batch['input'].shape, batch['truth'].shape)
+    #     print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
+    #     print(" ")
+    #     break
 
-    train_dataset = WeatherDataset(
-        data_path=train_folder,
-        obs_path=obs_folder,
-        target_variable="10m_wind_speed",
-        lead_time_idx=28,
-        valid_years=[1996,2017],
-        valid_months=[1,1],
-        subset="train")
-    train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-    print("Nb of training examples:",len(train_loader.dataset.data_index))
-    for batch in train_loader:
-        print("SHAPES")
-        print(batch['mu'].shape, batch['sigma'].shape, batch['input'].shape, batch['truth'].shape)
-        print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
-        print(" ")
-        break
+    for variable in ["10m_wind_speed"]:
+        print("Variable",variable)
+        for month in range(1,13):
+            print("Month", month)
+            train_dataset = WeatherDataset(
+                data_path=train_folder,
+                obs_path=obs_folder,
+                target_variable=variable,
+                lead_time_idx=28,
+                valid_years=[1996,2017],
+                valid_months=[month,month],
+                subset="train")
+            #break
+        #break
 
-    val_dataset = WeatherDataset(
-    data_path=train_folder,
-    obs_path=obs_folder,
-    target_variable="10m_wind_speed",
-    lead_time_idx=28,
-    valid_years=[1996,2017],
-    valid_months=[1,1],
-    subset="val")
-    val_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-    print("Nb of training examples:",len(train_loader.dataset.data_index))
-    for batch in train_loader:
-        print("SHAPES")
-        print(batch['mu'].shape, batch['sigma'].shape, batch['input'].shape, batch['truth'].shape)
-        print(" ")
-        break
+        # train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+        # print("Nb of training examples:",len(train_loader.dataset.data_index))
+        # for batch in train_loader:
+        #     print("SHAPES")
+        #     print(batch['mu'].shape, batch['sigma'].shape, batch['input'].shape, batch['truth'].shape)
+        #     print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
+        #     print(" ")
+        #     break
 
-    print(val_dataset.data_index[0])
-    print(train_dataset.data_index[0])
+    # val_dataset = WeatherDataset(
+    # data_path=train_folder,
+    # obs_path=obs_folder,
+    # target_variable="10m_wind_speed",
+    # lead_time_idx=28,
+    # valid_years=[1996,2017],
+    # valid_months=[1,1],
+    # subset="val")
+    # val_loader = DataLoader(val_dataset, batch_size=1, shuffle=True)
+    # print("Nb of training examples:",len(val_loader.dataset.data_index))
+    # for batch in val_loader:
+    #     print("SHAPES")
+    #     print(batch['mu'].shape, batch['sigma'].shape, batch['input'].shape, batch['truth'].shape)
+    #     print(" ")
+    #     break
+
+    # print(val_dataset.data_index[0])
+    # print(train_dataset.data_index[0])
 
 

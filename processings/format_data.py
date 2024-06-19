@@ -3,6 +3,7 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+from scipy.stats import norm
 
 def get_year(date: np.datetime64):
     return pd.Timestamp(date).year
@@ -43,3 +44,12 @@ def adjust_date(forecast_time, hindcast_year):
     new_date = forecast_time + year_delta
     return new_date
     
+    
+def fit_norm(data):
+    # Fit a normal distribution to the data
+    mu, sigma = norm.fit(data)
+    return mu, sigma
+
+def fit_norm_along_axis(arr, axis):
+    # Apply the fit_norm function along the specified axis
+    return np.apply_along_axis(lambda x: fit_norm(x), axis, arr)
