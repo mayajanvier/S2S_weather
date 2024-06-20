@@ -7,16 +7,23 @@ from concurrent.futures import ProcessPoolExecutor
 from time import time
 import os
 
-def save_train2netcdf(xarray_data, hindcast_year, time_slice, folder):
+def save_train2netcdf(xarray_data, hindcast_year, time_slice, folder, selected_leads = [0,7,14,21,28,35,39]):
     path = f"{folder}/data_hindcast={hindcast_year}_forecast={time_slice[0]}_{time_slice[1]}.nc"
     if not os.path.exists(path):
-        subset = xarray_data.isel(hindcast_year=hindcast_year, forecast_time=slice(time_slice[0],time_slice[1]))
+        subset = xarray_data.isel(
+            hindcast_year=hindcast_year,
+            forecast_time=slice(time_slice[0],time_slice[1]),
+            prediction_timedelta=selected_leads
+            )
         subset.to_netcdf(path)
 
-def save_test2netcdf(xarray_data, time_slice, folder):
+def save_test2netcdf(xarray_data, time_slice, folder, selected_leads = [0,7,14,21,28,35,39]):
     path = f"{folder}/data_forecast={time_slice[0]}_{time_slice[1]}.nc"
     if not os.path.exists(path):
-        subset = xarray_data.isel(time=slice(time_slice[0],time_slice[1]))
+        subset = xarray_data.isel(
+            time=slice(time_slice[0],time_slice[1]),
+            prediction_timedelta=selected_leads
+            )
         subset.to_netcdf(path)
 
 def download_train_test(train_data, test_data):
@@ -70,7 +77,22 @@ if __name__ == "__main__":
     
     print(f"Extracted observation data in {time()-time_start:.2f} seconds") # 73s
 
-    ### TRAIN AND TEST DATA
+    ### TRAIN AND TEST DATA: AVERAGED ENSEMBLE
+    # print("Extracting train and test data:")
+    # time_start = time()
+    # with ProcessPoolExecutor(6) as exe:
+    #     exe.submit(download_train_test(forecast_train, forecast_test))
+    # print(f"Extracted train and test data in {time()-time_start:.2f} seconds")
+
+
+    ### TRAIN AND TEST DATA: ENSEMBLE MEMBERS 
+    # destination paths
+    train_folder = '/home/majanvie/scratch/data/raw/train_ensemble'
+    test_folder = '/home/majanvie/scratch/data/raw/test_ensemble'
+
+    forecast_train = xr.open_zarr(params["forecast_train_ens"])
+    forecast_test = xr.open_zarr(params["forecast_test_ens"])
+
     print("Extracting train and test data:")
     time_start = time()
     with ProcessPoolExecutor(6) as exe:
