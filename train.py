@@ -21,10 +21,10 @@ def create_training_folder(name, base_dir='training_results'):
     return new_folder
 
 
-def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, target_column, batch_size, save_every=50):
+def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, target_column, batch_size, val_mask, save_every=50):
     # Weight and Biases setup
     if "spatial" in name_experiment:
-        project = "S2S_train_SpatialMOS"
+        project = "S2S_SpatialMOS_pressure_levels"
         architecture = "SpatialMOS"
     else:
         project = "S2S_train_MOS"
@@ -73,7 +73,8 @@ def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folde
                 val_X = val_batch['input']
                 val_y = val_batch['truth']
                 val_out_distrib = model(val_mu, val_sigma, val_X, val_y)
-                val_loss += criterion(val_out_distrib, val_y).mean()      
+                val_loss_masked = criterion(val_out_distrib, val_y) * val_mask # land sea mask
+                val_loss += val_loss_masked.mean()     
         model.train()
 
         val_loss = val_loss / len(val_loader)

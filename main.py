@@ -1,9 +1,11 @@
+import argparse
 import pandas as pd
 from model import MOS, SpatialMOS
 from processings.dataset import PandasDataset, WeatherDataset
 from train import train, create_training_folder
 from torch.utils.data import DataLoader
 from metrics import crps_normal
+import torch
 import json
 from sklearn.model_selection import train_test_split
 import xarray as xr
@@ -82,6 +84,8 @@ def main_spatial(variable, lead_time, valid_years, valid_months, batch_size, lr,
     train_folder = f"{data_folder}/train"
     obs_folder = f"{data_folder}/obs"
 
+    land_sea_mask = xr.open_dataset(f"{obs_folder}/land_sea_mask.nc").land_sea_mask.values.T # (lat, lon)
+    land_sea_mask = torch.tensor(land_sea_mask, dtype=torch.float)
     folder = create_training_folder(name_experiment, base_dir)
     
     train_dataset = WeatherDataset(
@@ -135,7 +139,8 @@ def main_spatial(variable, lead_time, valid_years, valid_months, batch_size, lr,
         name_experiment=name_experiment,
         target_column=variable,
         batch_size=batch_size,
-        save_every=50)
+        val_mask=land_sea_mask,
+        save_every=5)
     
     
 
@@ -156,20 +161,29 @@ if __name__ == "__main__":
     #         base_dir=base_dir)
     
     ### Spatial month
-    base_dir = "training_results/spatial_month"
+    parser = argparse.ArgumentParser(description="Run spatial month experiment.")
+    parser.add_argument('-lead', '--lead_idx', type=int, required=True, help="Lead index to use in the experiment")
+    args = parser.parse_args()
+    lead_idx = args.lead_idx
+
+    base_dir = f"training_results/spatial_month/lead{lead_idx}"
     for month in range(1,13):
         print(f"Month {month}")
         for variable in ["2m_temperature", "10m_wind_speed"]:
             print(f"Variable {variable}")
+            if variable == "2m_temperature":
+                nb_epochs = 10
+            elif variable == "10m_wind_speed":
+                nb_epochs = 15
             main_spatial(
                 variable,
-                lead_time=28,
+                lead_time=lead_idx,
                 valid_years=[1996,2017],
                 valid_months=[month, month],
                 batch_size=128,
                 lr=0.01,
-                nb_epoch=15,
-                name_experiment=f"spatial_month{month}_{variable}_lead={28}",
+                nb_epoch=nb_epochs,
+                name_experiment=f"spatial_month{month}_{variable}_lead={lead_idx}",
                 base_dir=base_dir)
 
 

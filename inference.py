@@ -74,7 +74,7 @@ def SpatialMOS_inference(lead_time, valid_years, train_years, epoch=14):
     climato_folder = f"{obs_folder}/climato"
 
     base_dir = "training_results/spatial_month"
-    train_index = 2
+    train_index = 1
     full_results = []   
     for month in range(1,13):
         print(f"Month {month}")
@@ -126,7 +126,7 @@ def SpatialMOS_inference(lead_time, valid_years, train_years, epoch=14):
                 # Create a multi-index for the time dimension
                 time_index = pd.MultiIndex.from_tuples([(lead_time, forecast_time)], names=["lead_time", "forecast_time"])
                 
-                if train_index % 2 == 0:
+                if train_index % 2 == 1:
                     ds = xr.Dataset(
                         data_vars=dict(
                             crps_temperature=(["time", "latitude", "longitude"], crps_var),
