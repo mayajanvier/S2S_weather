@@ -67,19 +67,23 @@ def MOS_inference(model, batch):
         f.write("\n]")  
 
 
-def SpatialMOS_inference(lead_time, valid_years, train_years, epoch=14):
+def SpatialMOS_inference(lead_time, valid_years, train_years):
     data_folder = "/home/majanvie/scratch/data/raw"
     test_folder = f"{data_folder}/test"
     obs_folder = f"{data_folder}/obs"
     climato_folder = f"{obs_folder}/climato"
 
-    base_dir = "training_results/spatial_month"
+    base_dir = f"training_results/spatial_month/lead{lead_time}"
     train_index = 1
     full_results = []   
     for month in range(1,13):
         print(f"Month {month}")
         for variable in ["2m_temperature", "10m_wind_speed"]:
             print(f"Variable {variable}")
+            if variable == "2m_temperature":
+                epoch = 9
+            elif variable == "10m_wind_speed":
+                epoch = 14
             model_folder = f"{base_dir}/training_{train_index}_spatial_month{month}_{variable}_lead={lead_time}"
             climato_path = f"{climato_folder}/{variable}_{train_years[0]}_{train_years[-1]}_month{month}_lead{lead_time}.nc"
             climato = xr.open_dataset(climato_path)
@@ -169,7 +173,9 @@ def SpatialMOS_inference(lead_time, valid_years, train_years, epoch=14):
 
 
 if __name__ == "__main__":
-    SpatialMOS_inference(28, [2018,2022],[1996,2017],epoch=14)
+    for lead_time in [39]:
+        SpatialMOS_inference(lead_time, [2018,2022],train_years=[1996,2017])
+
 
 
 
