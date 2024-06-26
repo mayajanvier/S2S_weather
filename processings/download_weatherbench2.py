@@ -57,9 +57,9 @@ def save_train2netcdf_mean_std(xarray_data, hindcast_year, time_slice, folder, s
             forecast_time=slice(time_slice[0],time_slice[1]),
             prediction_timedelta=selected_leads
             )
-        subset_mean = subset.mean(dim='number') # we need all means 
         compute_wind_speedxr(subset, "data")
-        # only get wind speed 
+        subset_mean = subset.mean(dim='number') # we need all means 
+        # only get wind speed std
         subset_std = subset["10m_wind_speed"].sel(level=1000).std(dim='number') # we need target variable std only 
         subset_mean.to_netcdf(path_mean)
         subset_std.to_netcdf(path_std) 
@@ -72,9 +72,9 @@ def save_test2netcdf_mean_std(xarray_data, time_slice, folder, selected_leads = 
             time=slice(time_slice[0],time_slice[1]),
             prediction_timedelta=selected_leads
             )
-        subset_mean = subset.mean(dim='number') # we need all means
         compute_wind_speedxr(subset, "data")
-        # only get wind speed 
+        subset_mean = subset.mean(dim='number') # we need all means
+        # only get wind speed std
         subset_std = subset["10m_wind_speed"].sel(level=1000).std(dim='number') # we need target variable std only
         subset_mean.to_netcdf(path_mean)
         subset_std.to_netcdf(path_std) 
