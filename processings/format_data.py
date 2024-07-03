@@ -74,6 +74,7 @@ def save_format_ensemble_data_EMOS(surface_dir, levels_dir, out_folder):
             
             mean_surface = mean_surface.drop_vars([f"specific_humidity_{level}" for level in [10,50,100]]) # all NaN
             mean_surface = mean_surface.drop_vars([f"10m_wind_speed_{level}" for level in mean_levels.level.values[:-1]])
+            mean_surface = mean_surface.rename_vars({"10m_wind_speed_1000": "10m_wind_speed"})
             
             # std 
             std_surface = dataset_surface.std(dim="number",skipna=True) # do not take into account nan values
@@ -126,10 +127,10 @@ if __name__== "__main__":
     surface_dir = f"{raw_data_folder}/train_ensemble_surface"
     levels_dir = f"{raw_data_folder}/train"
     out_folder = "/home/majanvie/scratch/data/train/EMOS"
-    format_ensemble_data_EMOS(surface_dir, levels_dir, out_folder)
+    save_format_ensemble_data_EMOS(surface_dir, levels_dir, out_folder)
 
     # test 
     surface_dir = f"{raw_data_folder}/test_ensemble_surface"
     levels_dir = f"{raw_data_folder}/test"
     out_folder = "/home/majanvie/scratch/data/test/EMOS"
-    format_ensemble_data_EMOS(surface_dir, levels_dir, out_folder)
+    save_format_ensemble_data_EMOS(surface_dir, levels_dir, out_folder)
