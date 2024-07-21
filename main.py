@@ -2,7 +2,7 @@ import argparse
 import pandas as pd
 from model import MOS, SpatialMOS, SpatialEMOS
 from processings.dataset import PandasDataset, WeatherDataset, WeatherEnsDataset, WeatherEnsembleDataset
-from train import train, create_training_folder
+from train import train, create_training_folder, train_sched
 from torch.utils.data import DataLoader
 from metrics import crps_normal
 import torch
@@ -207,6 +207,200 @@ def main_spatial_ens(variable, lead_time, valid_years, valid_months, batch_size,
         val_mask=land_sea_mask,
         save_every=5)    
 
+def main_spatial_ens2(variable, lead_time, valid_years, valid_months, batch_size, lr, nb_epoch, name_experiment, base_dir):
+    """ Train models for this variable, lead_time, 
+    on valid months data, for all latitude/longitude """
+    data_folder = "/home/majanvie/scratch/data" 
+    train_folder = f"{data_folder}/train/EMOS"
+    obs_folder = f"{data_folder}/raw/obs"
+
+    land_sea_mask = xr.open_dataset(f"{obs_folder}/land_sea_mask.nc").land_sea_mask.values.T # (lat, lon)
+    land_sea_mask = torch.tensor(land_sea_mask, dtype=torch.float)
+    folder = create_training_folder(name_experiment, base_dir)
+    
+    train_dataset = WeatherEnsembleDataset(
+        data_path=train_folder,
+        obs_path=obs_folder,
+        target_variable=variable,
+        lead_time_idx=lead_time,
+        valid_years=valid_years,
+        valid_months=valid_months,
+        subset="train")
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    val_dataset = WeatherEnsembleDataset(
+        data_path=train_folder,
+        obs_path=obs_folder,
+        target_variable=variable,
+        lead_time_idx=lead_time,
+        valid_years=valid_years,
+        valid_months=valid_months,
+        subset="val")
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+
+    # model setup and training
+    model = SpatialEMOS(66, 121, 240, 4)
+    criterion = crps_normal
+
+    # write setup in json
+    params = {
+        "variable": variable,
+        "lead_time": lead_time,
+        "valid_years": valid_years,
+        "valid_months": valid_months,
+        "batch_size": batch_size,
+        "lr": lr,
+        "nb_epoch": nb_epoch,
+        "name_experiment": name_experiment,
+        "base_dir": base_dir
+    }
+    with open(folder+"/params.json", "w") as fp:
+        json.dump(params, fp)
+
+    # training
+    train_sched(
+        train_loader,
+        val_loader,
+        model,
+        nb_epoch=nb_epoch,
+        lr=lr,
+        criterion=criterion,
+        result_folder=folder,
+        name_experiment=name_experiment,
+        target_column=variable,
+        batch_size=batch_size,
+        val_mask=land_sea_mask,
+        save_every=5)    
+
+def main_spatial_ens3(variable, lead_time, valid_years, valid_months, batch_size, lr, nb_epoch, name_experiment, base_dir):
+    """ Train models for this variable, lead_time, 
+    on valid months data, for all latitude/longitude """
+    data_folder = "/home/majanvie/scratch/data" 
+    train_folder = f"{data_folder}/train/EMOS"
+    obs_folder = f"{data_folder}/raw/obs"
+
+    land_sea_mask = xr.open_dataset(f"{obs_folder}/land_sea_mask.nc").land_sea_mask.values.T # (lat, lon)
+    land_sea_mask = torch.tensor(land_sea_mask, dtype=torch.float)
+    folder = create_training_folder(name_experiment, base_dir)
+    
+    train_dataset = WeatherEnsembleDataset(
+        data_path=train_folder,
+        obs_path=obs_folder,
+        target_variable=variable,
+        lead_time_idx=lead_time,
+        valid_years=valid_years,
+        valid_months=valid_months,
+        subset="train")
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    val_dataset = WeatherEnsembleDataset(
+        data_path=train_folder,
+        obs_path=obs_folder,
+        target_variable=variable,
+        lead_time_idx=lead_time,
+        valid_years=valid_years,
+        valid_months=valid_months,
+        subset="val")
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+
+    # model setup and training
+    model = SpatialEMOSinit(66, 121, 240, 4)
+    criterion = crps_normal
+
+    # write setup in json
+    params = {
+        "variable": variable,
+        "lead_time": lead_time,
+        "valid_years": valid_years,
+        "valid_months": valid_months,
+        "batch_size": batch_size,
+        "lr": lr,
+        "nb_epoch": nb_epoch,
+        "name_experiment": name_experiment,
+        "base_dir": base_dir
+    }
+    with open(folder+"/params.json", "w") as fp:
+        json.dump(params, fp)
+
+    # training
+    train(
+        train_loader,
+        val_loader,
+        model,
+        nb_epoch=nb_epoch,
+        lr=lr,
+        criterion=criterion,
+        result_folder=folder,
+        name_experiment=name_experiment,
+        target_column=variable,
+        batch_size=batch_size,
+        val_mask=land_sea_mask,
+        save_every=5)    
+
+def main_spatial_ens4(variable, lead_time, valid_years, valid_months, batch_size, lr, nb_epoch, name_experiment, base_dir):
+    """ Train models for this variable, lead_time, 
+    on valid months data, for all latitude/longitude """
+    data_folder = "/home/majanvie/scratch/data" 
+    train_folder = f"{data_folder}/train/EMOS"
+    obs_folder = f"{data_folder}/raw/obs"
+
+    land_sea_mask = xr.open_dataset(f"{obs_folder}/land_sea_mask.nc").land_sea_mask.values.T # (lat, lon)
+    land_sea_mask = torch.tensor(land_sea_mask, dtype=torch.float)
+    folder = create_training_folder(name_experiment, base_dir)
+    
+    train_dataset = WeatherEnsembleDataset2(
+        data_path=train_folder,
+        obs_path=obs_folder,
+        target_variable=variable,
+        lead_time_idx=lead_time,
+        valid_years=valid_years,
+        valid_months=valid_months,
+        subset="train")
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    val_dataset = WeatherEnsembleDataset2(
+        data_path=train_folder,
+        obs_path=obs_folder,
+        target_variable=variable,
+        lead_time_idx=lead_time,
+        valid_years=valid_years,
+        valid_months=valid_months,
+        subset="val")
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+
+    # model setup and training
+    model = SpatialEMOS(66, 121, 240, 4)
+    criterion = crps_normal
+
+    # write setup in json
+    params = {
+        "variable": variable,
+        "lead_time": lead_time,
+        "valid_years": valid_years,
+        "valid_months": valid_months,
+        "batch_size": batch_size,
+        "lr": lr,
+        "nb_epoch": nb_epoch,
+        "name_experiment": name_experiment,
+        "base_dir": base_dir
+    }
+    with open(folder+"/params.json", "w") as fp:
+        json.dump(params, fp)
+
+    # training
+    train(
+        train_loader,
+        val_loader,
+        model,
+        nb_epoch=nb_epoch,
+        lr=lr,
+        criterion=criterion,
+        result_folder=folder,
+        name_experiment=name_experiment,
+        target_column=variable,
+        batch_size=batch_size,
+        val_mask=land_sea_mask,
+        save_every=5)    
 
 if __name__ == "__main__":
     ### Spatial year 
@@ -257,9 +451,9 @@ if __name__ == "__main__":
     lead_idx = args.lead_idx
 
     base_dir = f"training_results/spatial_month_ensemble/lead{lead_idx}"
-    for month in range(8,13):
+    for month in range(1,2):
         print(f"Month {month}")
-        for variable in ["2m_temperature", "10m_wind_speed"]:
+        for variable in ["2m_temperature","10m_wind_speed"]:
             print(f"Variable {variable}")
             if variable == "2m_temperature":
                 nb_epochs = 10
@@ -273,5 +467,5 @@ if __name__ == "__main__":
                 batch_size=128,
                 lr=0.01,
                 nb_epoch=nb_epochs,
-                name_experiment=f"spatial_month{month}_{variable}_lead={lead_idx}",
+                name_experiment=f"spatial_month{month}_{variable}_lead={lead_idx}_normf",
                 base_dir=base_dir)
