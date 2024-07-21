@@ -34,7 +34,7 @@ class SpatialMOS(nn.Module):
     """ Manage all latitude and longitude at once """
     def __init__(self, feature_dim, lat_dim, lon_dim, out_dim):
         super().__init__()
-        self.matrix = nn.Parameter(torch.randn(out_dim, feature_dim, lat_dim, lon_dim))
+        self.matrix = nn.Parameter(torch.randn(out_dim, feature_dim, lat_dim, lon_dim)*0.01)
 
     def forward(self, mu, sigma, features, truth):
         # Perform element-wise multiplication and sum over the shared dimension (features, i)
@@ -49,6 +49,131 @@ class SpatialMOS(nn.Module):
         distrib = Normal(mu_pred, sigma_pred)
         return distrib
 
+class SpatialEMOS(nn.Module):
+    """ Manage all latitude and longitude at once """
+    def __init__(self, feature_dim, lat_dim, lon_dim, out_dim):
+        super().__init__()
+        # TODO remettre scaling 0.01 apres test
+        self.matrix = nn.Parameter(torch.randn(out_dim, feature_dim, lat_dim, lon_dim)*0.0001) 
+
+    def forward(self, mu, sigma, features, truth):
+        # Perform element-wise multiplication and sum over the shared dimension (features, i)
+        theta = torch.einsum('bijk,mijk->bmjk', features, self.matrix) # shape (batch, out_dim, lat_dim, lon_dim)
+        
+        # MOS
+        print("theta")
+        print(theta[:,0,:,:].mean(), theta[:,1,:,:].mean(), theta[:,2,:,:].mean(), theta[:,3,:,:].mean())
+        print(torch.isnan(theta).sum())
+        print((theta==0).sum())
+        print(torch.isinf(theta).sum())
+        print(theta[:,0,:,:].min(), theta[:,0,:,:].max())
+        print(theta[:,1,:,:].min(), theta[:,1,:,:].max())
+        print(theta[:,2,:,:].min(), theta[:,2,:,:].max())
+        print(theta[:,3,:,:].min(), theta[:,3,:,:].max())
+
+        mu_pred = mu*(theta[:,0,:,:] +1)+ theta[:,1,:,:] # test prior a, c=1 
+        print("sigma")
+        sigma_values = sigma*(theta[:,2,:,:]+1) + theta[:,3,:,:]
+        print(sigma_values.min(), sigma_values.max())
+        print(torch.isinf(sigma*(theta[:,2,:,:]+1)).sum())
+
+        sigma_pred = torch.exp(sigma*(theta[:,2,:,:]+1) + theta[:,3,:,:]) # to preserve positiveness
+        # count number of nan
+        print(torch.isnan(mu_pred).sum())
+        print(torch.isnan(sigma_pred).sum())
+        #count number of zeros 
+        print((mu_pred==0).sum())
+        print((sigma_pred==0).sum())
+
+        # out distribution is a normal distribution of mean mu_pred and std sigma_pred
+        distrib = Normal(mu_pred, sigma_pred)
+        return distrib
+
+class SpatialEMOSprior(nn.Module):
+    """ Manage all latitude and longitude at once """
+    def __init__(self, feature_dim, lat_dim, lon_dim, out_dim):
+        super().__init__()
+        # TODO remettre scaling 0.01 apres test
+        self.matrix = nn.Parameter(torch.randn(out_dim, feature_dim, lat_dim, lon_dim)*0.01) 
+
+    def forward(self, mu, sigma, features, truth):
+        # Perform element-wise multiplication and sum over the shared dimension (features, i)
+        theta = torch.einsum('bijk,mijk->bmjk', features, self.matrix) # shape (batch, out_dim, lat_dim, lon_dim)
+        
+        # MOS
+        print(theta[:,0,:,:].mean(), theta[:,1,:,:].mean(), theta[:,2,:,:].mean(), theta[:,3,:,:].mean())
+        mu_pred = mu*(theta[:,0,:,:]+1) + theta[:,1,:,:] # test prior a, c=1 
+        sigma_pred = torch.exp(sigma*(theta[:,2,:,:]+1) + theta[:,3,:,:]) + 1e-3 # to preserve positiveness
+        breakpoint
+
+        # out distribution is a normal distribution of mean mu_pred and std sigma_pred
+        distrib = Normal(mu_pred, sigma_pred)
+        return distrib
+
+# class SpatialEMOSnoexp(nn.Module):
+#     """ Manage all latitude and longitude at once """
+#     def __init__(self, feature_dim, lat_dim, lon_dim, out_dim):
+#         super().__init__()
+#         # TODO voir si on a besoin du scaling 0.01
+#         self.matrix = nn.Parameter(torch.randn(out_dim, feature_dim, lat_dim, lon_dim)*0.01) 
+
+#     def forward(self, mu, sigma, features, truth):
+#         # Perform element-wise multiplication and sum over the shared dimension (features, i)
+#         theta = torch.einsum('bijk,mijk->bmjk', features, self.matrix) # shape (batch, out_dim, lat_dim, lon_dim)
+        
+#         # MOS
+#         mu_pred = mu*theta[:,0,:,:] + theta[:,1,:,:]
+#         sigma_pred = torch.abs(sigma*theta[:,2,:,:] + theta[:,3,:,:]) # to preserve positiveness
+
+#         # out distribution is a normal distribution of mean mu_pred and std sigma_pred
+#         distrib = Normal(mu_pred, sigma_pred)
+#         return distrib
+
+
+# class SpatialEMOSinit(nn.Module):
+#     """ Manage all latitude and longitude at once """
+#     def __init__(self, feature_dim, lat_dim, lon_dim, out_dim):
+#         super().__init__()
+#         # TODO voir si on a besoin du scaling 0.01
+#         self.matrix = nn.Parameter(torch.randn(out_dim, feature_dim, lat_dim, lon_dim)*0.0001) 
+
+#     def forward(self, mu, sigma, features, truth):
+#         # Perform element-wise multiplication and sum over the shared dimension (features, i)
+#         theta = torch.einsum('bijk,mijk->bmjk', features, self.matrix) # shape (batch, out_dim, lat_dim, lon_dim)
+        
+#         # MOS
+#         mu_pred = mu*theta[:,0,:,:] + theta[:,1,:,:]
+#         sigma_pred = torch.exp(sigma*theta[:,2,:,:] + theta[:,3,:,:]) # to preserve positiveness
+
+#         # out distribution is a normal distribution of mean mu_pred and std sigma_pred
+#         distrib = Normal(mu_pred, sigma_pred)
+#         return distrib
+
+class SpatioTemporalEMOS(nn.Module):
+    """ Manage all latitude, longitude and time (months) at once,
+    and moving average mean of MOS parameters over time dimension """
+    def __init__(self, time_dim, feature_dim, lat_dim, lon_dim, out_dim):
+        super().__init__()
+        self.time_dim = time_dim
+        self.matrix = nn.Parameter(torch.randn(time_dim, out_dim, feature_dim, lat_dim, lon_dim))
+
+    def forward(self, mu, sigma, features, truth):
+        # Perform element-wise multiplication and sum over the shared dimension (features, i)
+        theta = torch.einsum('btijk,tmijk->btmjk', features, self.matrix) # shape (batch, time_dim, out_dim, lat_dim, lon_dim)
+
+        # Circular rolling window mean of the out_dim over time
+        theta_rolled = torch.zeros_like(theta)
+        for k in range(self.time_dim):
+            indices = [(k-1) % self.time_dim, k, (k+1) % self.time_dim]
+            theta_rolled[:, k, :, :, :] = torch.mean(theta[:, indices, :, :, :], dim=1) # shape unchanged
+        
+        # MOS
+        mu_pred = mu*theta[:,:,0,:,:] + theta[:,:,1,:,:]
+        sigma_pred = torch.exp(sigma*theta[:,:,2,:,:] + theta[:,:,3,:,:]) # to preserve positiveness
+
+        # out distribution is a normal distribution of mean mu_pred and std sigma_pred
+        distrib = Normal(mu_pred, sigma_pred)
+        return distrib
 
 
 if __name__== "__main__":
