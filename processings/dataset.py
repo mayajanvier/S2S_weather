@@ -3,6 +3,7 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import torch
 from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from format_data import compute_wind_speedxr, compute_wind_speed, fit_norm_along_axis, format_ensemble_data_EMOS
 import xarray as xr
@@ -547,18 +548,54 @@ class WeatherEnsembleDataset:
 
         all_features = np.stack(all_features) # (n_files, n_vars, n_lat, n_lon)
         # do mean without considering NaN 
-        self.mean = np.nanmean(all_features,axis=0) # (n_vars, n_lat, n_lon)
-        self.std = np.nanstd(all_features,axis=0)
+        self.mean_map = np.nanmean(all_features,axis=0) # (n_vars, n_lat, n_lon)
+        self.std_map = np.nanstd(all_features,axis=0)
 
-        self.mean = np.where(np.isnan(self.mean), 0, self.mean) # replace NaN by 0
-        self.std = np.where(np.isnan(self.std), 1, self.std) # replace NaN by 1
-        self.std = np.where(self.std == 0, 1, self.std) # replace 0 by 1
+        self.mean_map = np.where(np.isnan(self.mean), 0, self.mean) # replace NaN by 0
+        self.std_map = np.where(np.isnan(self.std), 1, self.std) # replace NaN by 1
+        self.std_map = np.where(self.std == 0, 1, self.std) # replace 0 by 1
 
-        print(self.mean.shape, self.std.shape)
+        #print(self.mean.shape, self.std.shape)
 
         # count Nan values
-        print(f"Number of NaN values in mean: {np.isnan(self.mean).sum()}")
-        print(f"Number of NaN values in std: {np.isnan(self.std).sum()}")
+        #print(f"Number of NaN values in mean: {np.isnan(self.mean).sum()}")
+        #print(f"Number of NaN values in std: {np.isnan(self.std).sum()}")
+    
+    # def fit_scaler(self):
+    #     """Get all features and fit the scaler on them."""
+    #     files = np.unique([x[0] for x in self.data_index])
+    #     sample_count = 0 # n 
+    #     self.running_mean_map = None
+    #     self.running_var_map = None
+    #     for file_mean in files:
+    #         data = xr.open_dataset(file_mean)
+    #         if self.subset == "test":
+    #             data = data.rename({'time': 'forecast_time'})
+    #         new_nb_samples = data["2m_temperature"].isel(longitude=0, latitude=0).values.flatten().shape[0] # delta 
+    #         if sample_count == 0:
+    #             # compute using xarray methods
+    #             self.running_mean_map = data.mean(dim=["forecast_time", "prediction_timedelta"]).to_array().values
+    #             self.running_var_map = data.var(dim=["forecast_time", "prediction_timedelta"]).to_array().values
+    #             sample_count += new_nb_samples
+    #         else:
+    #             # compute new mean and variance
+    #             new_data_mean = data.mean(dim=["forecast_time", "prediction_timedelta"]).to_array().values
+    #             new_data_var = data.var(dim=["forecast_time", "prediction_timedelta"]).to_array().values # Nan to zero to avoid warning 
+                
+    #             # incremental mean and variance
+    #             previous_mean_map = self.running_mean_map
+    #             previous_var_map = self.running_var_map
+    #             self.running_mean_map = (sample_count * self.running_mean_map + new_nb_samples * new_data_mean) / (sample_count + new_nb_samples)
+    #             self.running_var_map = (sample_count * (previous_var_map + previous_mean_map**2) + 
+    #                             new_nb_samples * (new_data_var + new_data_mean**2)) / (sample_count+ new_nb_samples) - self.running_mean_map**2          
+    #             sample_count += new_nb_samples
+            
+    #     # manage NaN, negative values etc 
+    #     self.mean_map = np.where(np.isnan(self.running_mean_map), 0, self.running_mean_map)
+    #     self.running_var_map = np.where(np.isnan(self.running_var_map), 1, self.running_var_map)
+    #     self.var_map = np.where(self.running_var_map <= 0, 1, self.running_var_map)
+    #     self.std_map = np.sqrt(self.var_map)
+            
 
     def __len__(self):
         return len(self.data_index)
@@ -577,14 +614,15 @@ class WeatherEnsembleDataset:
         truth = self.obs.sel(time=valid_time)
 
         # Manage Nan
-        data_mean = data_mean.fillna(0)
-        data_std = data_std.fillna(0)
+        #data_mean = data_mean.fillna(0)
+        #data_std = data_std.fillna(0)
         #print(self.scaler.mean_.shape)
 
         # Normalize features
         data = data_mean.to_array().values # (n_vars, n_lat, n_lon)
         print("datamin",data.min(), data.max())
-        data = (data-self.mean)/self.std
+        data = (data-self.mean_map)/self.std_map
+        data = np.where(np.isnan(data), 0, data)
         # print number of Nan values data
         #print(f"Number of NaN values in data: {np.isnan(data).sum()}") 
         # if Nan replace by 0
@@ -595,7 +633,11 @@ class WeatherEnsembleDataset:
         # data = data.reshape(data.shape[0], -1) # Flatten spatial dimensions
         # data = self.scaler.transform(data) # Normalize features
         # data = data.reshape(shapes[0], shapes[1], shapes[2]) # Reshape back
-        features = torch.tensor(data, dtype=torch.float)
+        # data = np.where(np.isnan(data), 0, data) 
+        # add land sea mask feature
+        # land_sea_mask = truth["land_sea_mask"].values.T
+        # data = np.concatenate([data, land_sea_mask[np.newaxis, ...]], axis=0)
+        features = torch.tensor(data, dtype=torch.float) # 67x120x240
 
         # compute wind 
         if self.target_variable == "10m_wind_speed":
@@ -858,6 +900,8 @@ class WeatherYearEnsembleDataset:
         self.index_path = f"/home/majanvie/scratch/loader/{subset}_index.csv"
         self.scaler_path = f"/home/majanvie/scratch/loader/{subset}_scaler.joblib"
         self.scaler_truth_path = f"/home/majanvie/scratch/loader/{subset}_scaler_truth.joblib"
+        self.trend_path = f"/home/majanvie/scratch/loader/{subset}_trend_temp.nc"
+        self.trend_truth_path = f"/home/majanvie/scratch/loader/{subset}_trend_temp_truth.nc"
 
         # Open observations
         self.obs = xr.open_mfdataset(obs_path + '/*.nc', combine='by_coords')
@@ -876,13 +920,31 @@ class WeatherYearEnsembleDataset:
         print("len index", len(self.data_index))
         print(time.time()-dtime)
 
+        # compute train trends
+        if os.path.exists(self.trend_path):
+            #data = xr.open_dataset(self.trend_path)
+            self.trend_model = joblib.load(self.trend_path) 
+        else:
+            self.compute_trend("train")
+            self.save_trend("train")
+
+        # compute truth trends
+        if os.path.exists(self.trend_truth_path):
+            #data = xr.open_dataset(self.trend_truth_path)
+            self.trend_model_truth = joblib.load(self.trend_truth_path)
+        else:
+            self.compute_trend("obs")
+            self.save_trend("obs")
+
         # normalize training data
+        # TODO refaire save and load avec netcdf si ca marche 
         self.scaler = StandardScaler()
         if os.path.exists(self.scaler_path):
             self.load_scaler("train")
         else:
             self.fit_scaler("train")
             self.save_scaler("train")
+
         # normalize truth data 
         self.scaler_truth = StandardScaler()
         if os.path.exists(self.scaler_truth_path):
@@ -944,7 +1006,7 @@ class WeatherYearEnsembleDataset:
         # build climatology by fitting gaussians on train data, date wise, 
         # in a netcdf file, if not done already 
         if self.subset == "train":
-            climato_path = f"{obs_path}/climato/{self.target_variable}_{self.valid_years[0]}_{self.valid_years[-1]}_month{self.valid_months[0]}_lead{self.lead_time_idx}.nc"
+            climato_path = f"{self.obs_path}/climato/{self.target_variable}_{self.valid_years[0]}_{self.valid_years[-1]}_month{self.valid_months[0]}_lead{self.lead_time_idx}.nc"
             if not pathlib.Path(climato_path).exists():
                 climato = {}
                 for _,_, forecast_idx_in_file, valid_time, forecast_time in self.data_index:
@@ -986,61 +1048,145 @@ class WeatherYearEnsembleDataset:
                 final_ds.to_netcdf(climato_path)
 
     def fit_scaler(self, type):
-        """Get all features and fit the scaler on them"""
-        # Initialize lists to store partial means and variances
-        feature_count = 0
-        partial_means = None
-        partial_variances = None
-        i = 0
-
-        for file_mean, file_std, forecast_idx_in_file, valid_time, forecast_time, lead_time_idx in self.data_index:
-            if type == "train":
-                data_mean = xr.open_dataset(file_mean)
-                if self.subset == "test":
-                    data_mean = data_mean.rename({'time': 'forecast_time'})
-
-                data_mean = data_mean.isel(prediction_timedelta=lead_time_idx, forecast_time=forecast_idx_in_file)
-                data_mean = data_mean.fillna(0)  # manage NaN
-                data_mean = data_mean.to_array().values  # (n_vars, n_lat, n_lon)
-
-            elif type == "obs":
-                data_mean = self.obs.sel(time=valid_time)
-                compute_wind_speedxr(data_mean,"obs") # compute wind 
-                data_mean = data_mean[["2m_temperature", "10m_wind_speed"]].to_array().values.transpose(0,2,1) # (2, n_lat, n_lon)
-
-            # Flatten spatial dimensions
-            #data_mean = data_mean.reshape(data_mean.shape[0], -1)
-            print("data_mean",data_mean.shape)
-
-            # Incrementally compute mean and variance
-            feature_count += data_mean.shape[0]
-            if partial_means is None:
-                partial_means = [data_mean]#np.mean(data_mean, axis=0)
-                partial_variances = np.var(data_mean, axis=0)
-            else:
-                new_mean = np.mean(data_mean, axis=0)
-                new_variance = np.var(data_mean, axis=0)
-                
-                # Update means and variances
-                partial_means = (partial_means * (feature_count - data_mean.shape[0]) + new_mean * data_mean.shape[0]) / feature_count
-                partial_variances = ((partial_variances * (feature_count - data_mean.shape[0]) + new_variance * data_mean.shape[0])
-                                     / feature_count + 
-                                     (partial_means - new_mean)**2 * (feature_count - data_mean.shape[0]) * data_mean.shape[0] / feature_count**2)
-            i+=1
-            if i ==10:
-                break
-
-        # Set scaler parameters
+        # TODO add detrending before norm 
+        """Get all features and fit the scaler on them."""
         if type == "train":
-            self.scaler.mean_ = partial_means
-            self.scaler.var_ = partial_variances
-            self.scaler.scale_ = np.sqrt(partial_variances)
-            self.scaler.n_samples_seen_ = feature_count
-        elif type =="obs":
-            self.scaler_truth.mean_ = partial_means
-            self.scaler_truth.var_ = partial_variances
-            self.scaler_truth.scale_ = np.sqrt(partial_variances)
-            self.scaler_truth.n_samples_seen_ = feature_count
+            files = np.unique([x[0] for x in self.data_index])
+            sample_count = 0 # n 
+            self.running_mean_map = None
+            self.running_var_map = None
+            for file_mean in files:
+                data = xr.open_dataset(file_mean)
+                if self.subset == "test":
+                    data = data.rename({'time': 'forecast_time'})
+                new_nb_samples = data["2m_temperature"].isel(longitude=0, latitude=0).values.flatten().shape[0] # delta 
+                if sample_count == 0:
+                    # compute using xarray methods
+                    self.running_mean_map = data.mean(dim=["forecast_time", "prediction_timedelta"]).to_array().values
+                    self.running_var_map = data.var(dim=["forecast_time", "prediction_timedelta"]).to_array().values
+                    sample_count += new_nb_samples
+                else:
+                    # compute new mean and variance
+                    new_data_mean = data.mean(dim=["forecast_time", "prediction_timedelta"]).to_array().values
+                    new_data_var = data.var(dim=["forecast_time", "prediction_timedelta"]).to_array().values # Nan to zero to avoid warning 
+                    
+                    # incremental mean and variance
+                    previous_mean_map = self.running_mean_map
+                    previous_var_map = self.running_var_map
+                    self.running_mean_map = (sample_count * self.running_mean_map + new_nb_samples * new_data_mean) / (sample_count + new_nb_samples)
+                    self.running_var_map = (sample_count * (previous_var_map + previous_mean_map**2) + 
+                                    new_nb_samples * (new_data_var + new_data_mean**2)) / (sample_count+ new_nb_samples) - self.running_mean_map**2          
+                    sample_count += new_nb_samples
+                
+            # manage NaN, negative values etc 
+            self.mean_map = np.where(np.isnan(self.running_mean_map), 0, self.running_mean_map)
+            self.running_var_map = np.where(np.isnan(self.running_var_map), 1, self.running_var_map)
+            self.var_map = np.where(self.running_var_map <= 0, 1, self.running_var_map)
+            self.std_map = np.sqrt(self.var_map)
+
+        elif type == "obs":
+            valid_times = [x[3] for x in self.data_index]
+            truth = self.obs.sel(time=valid_times)
+            compute_wind_speedxr(truth,"obs")
+            truth = truth[["2m_temperature", "10m_wind_speed"]]
+            self.mean_truth = truth.mean(dim="time").to_array().values.transpose(0,2,1)
+            self.std_truth = truth.std(dim="time").to_array().values.transpose(0,2,1)
+
+
+    def compute_trend_temp(self, type):
+        if type == 'obs':
+            valid_times = [x[3] for x in self.data_index]
+            truth = self.obs["2m_temperature"].sel(time=valid_times).values
+            times = truth.time.values
+            num_times = np.array(pd.to_datetime(times).astype(np.int64))*1e-9 # ins seconds for stability
+            model = LinearRegression()
+            model.fit(num_times.reshape(-1,1), truth.reshape(truth.shape[0], -1))
+            self.trend_model_truth = model
+
+        elif type == "train":
+            files = np.unique([x[0] for x in self.data_index])
+            X, y = None, None
+            for file in files:
+                data = xr.open_dataset(file)["2m_temperature"].isel(prediction_timedelta=0)
+                if self.subset == "test":
+                    data = data.rename({'time': 'forecast_time'})
+                times = data.valid_time.values
+                num_times = np.array(pd.to_datetime(times).astype(np.int64)) *1e-9 # ins seconds for stability
+                if X is None:
+                    X = num_times
+                    y = data.values.reshape(data.shape[0], -1)
+                else:
+                    X = np.concatenate((X, num_times))
+                    y = np.concatenate((y, data.values.reshape(data.shape[0], -1)))
+            model = LinearRegression()
+            model.fit(X.reshape(-1,1), y)
+            self.trend_model = model
+
+
+    def save_trend_temp(self, type):
+        if type == "obs":
+            joblib.dump(self.trend_truth_model, self.trend_truth_path)
+        elif type == "train":
+            joblib.dump(self.trend_model, self.trend_path)
+
+        
+                
+    # def fit_scaler(self, type):
+    #     """Get all features and fit the scaler on them"""
+    #     # Initialize lists to store partial means and variances
+    #     feature_count = 0
+    #     partial_means = None
+    #     partial_variances = None
+    #     i = 0
+
+    #     for file_mean, file_std, forecast_idx_in_file, valid_time, forecast_time, lead_time_idx in self.data_index:
+    #         if type == "train":
+    #             data_mean = xr.open_dataset(file_mean)
+    #             if self.subset == "test":
+    #                 data_mean = data_mean.rename({'time': 'forecast_time'})
+
+    #             data_mean = data_mean.isel(prediction_timedelta=lead_time_idx, forecast_time=forecast_idx_in_file)
+    #             #data_mean = data_mean.fillna(0)  # manage NaN
+    #             data_mean = data_mean.to_array().values  # (n_vars, n_lat, n_lon)
+
+    #         elif type == "obs":
+    #             data_mean = self.obs.sel(time=valid_time)
+    #             compute_wind_speedxr(data_mean,"obs") # compute wind 
+    #             data_mean = data_mean[["2m_temperature", "10m_wind_speed"]].to_array().values.transpose(0,2,1) # (2, n_lat, n_lon)
+
+    #         # Flatten spatial dimensions
+    #         #data_mean = data_mean.reshape(data_mean.shape[0], -1)
+    #         print("data_mean",data_mean.shape)
+
+    #         # Incrementally compute mean and variance
+    #         feature_count += data_mean.shape[0]
+    #         if partial_means is None:
+    #             partial_means = [data_mean]#np.mean(data_mean, axis=0)
+    #             partial_variances = np.var(data_mean, axis=0)
+    #         else:
+    #             new_mean = np.mean(data_mean, axis=0)
+    #             new_variance = np.var(data_mean, axis=0)
+                
+    #             # Update means and variances
+    #             partial_means = (partial_means * (feature_count - data_mean.shape[0]) + new_mean * data_mean.shape[0]) / feature_count
+    #             partial_variances = ((partial_variances * (feature_count - data_mean.shape[0]) + new_variance * data_mean.shape[0])
+    #                                  / feature_count + 
+    #                                  (partial_means - new_mean)**2 * (feature_count - data_mean.shape[0]) * data_mean.shape[0] / feature_count**2)
+    #         i+=1
+    #         if i ==10:
+    #             break
+
+    #     # Set scaler parameters
+    #     if type == "train":
+    #         self.scaler.mean_ = partial_means
+    #         self.scaler.var_ = partial_variances
+    #         self.scaler.scale_ = np.sqrt(partial_variances)
+    #         self.scaler.n_samples_seen_ = feature_count
+    #     elif type =="obs":
+    #         self.scaler_truth.mean_ = partial_means
+    #         self.scaler_truth.var_ = partial_variances
+    #         self.scaler_truth.scale_ = np.sqrt(partial_variances)
+    #         self.scaler_truth.n_samples_seen_ = feature_count
     
 
     def save_scaler(self, type):
@@ -1076,30 +1222,44 @@ class WeatherYearEnsembleDataset:
         truth = self.obs.sel(time=valid_time)
 
         # Manage Nan
-        data_mean = data_mean.fillna(0)
-        data_std = data_std.fillna(0)
+        #data_mean = data_mean.fillna(0)
+        #data_std = data_std.fillna(0)
 
         # Normalize ground truth 
-        compute_wind_speedxr(truth,"obs") # compute wind 
-        truth = truth[["2m_temperature", "10m_wind_speed"]].to_array().values
-        truth = torch.tensor(truth.transpose(0,2,1), dtype=torch.float) # (2, n_lat, n_lon)
-        tshapes = truth.shape
-        truth = truth.reshape(truth.shape[0], -1) # Flatten spatial dimensions
-        truth = self.scaler_truth.transform(truth) # Normalize truth
-        truth = truth.reshape(tshapes[0], tshapes[1], tshapes[2]) # Reshape back
-        print(truth.shape)
-        print(truth)
+        # compute_wind_speedxr(truth,"obs") # compute wind 
+        # truth = truth[["2m_temperature", "10m_wind_speed"]].to_array().values
+        # truth = torch.tensor(truth.transpose(0,2,1), dtype=torch.float) # (2, n_lat, n_lon)
+        # tshapes = truth.shape
+        # truth = truth.reshape(truth.shape[0], -1) # Flatten spatial dimensions
+        # truth = self.scaler_truth.transform(truth) # Normalize truth
+        # truth = truth.reshape(tshapes[0], tshapes[1], tshapes[2]) # Reshape back
+        # print(truth.shape)
+        # print(truth)
+
+        compute_wind_speedxr(truth,"obs")
+        truth = truth[["2m_temperature", "10m_wind_speed"]].to_array().values.transpose(0,2,1) # (2, n_lat, n_lon)
+        truth = (truth - self.mean_truth)/self.std_truth
+        truth = torch.tensor(truth, dtype=torch.float)
 
 
         # Normalize features
+        # data = data_mean.to_array().values # (n_vars, n_lat, n_lon)
+        # shapes = data.shape
+        # print(shapes)
+        # print(self.scaler.mean_.shape, self.scaler.scale_.shape)
+        # data = data.reshape(data.shape[0], -1) # Flatten spatial dimensions
+        # data = self.scaler.transform(data) # Normalize features
+        # data = data.reshape(shapes[0], shapes[1], shapes[2]) # Reshape back
+
+
         data = data_mean.to_array().values # (n_vars, n_lat, n_lon)
         shapes = data.shape
-        print(shapes)
-        print(self.scaler.mean_.shape, self.scaler.scale_.shape)
-        data = data.reshape(data.shape[0], -1) # Flatten spatial dimensions
-        data = self.scaler.transform(data) # Normalize features
-        data = data.reshape(shapes[0], shapes[1], shapes[2]) # Reshape back
-
+        data = (data-self.mean_map)/self.std_map
+        data = np.where(np.isnan(data), 0, data)
+        # add land sea mask feature
+        land_sea_mask = truth["land_sea_mask"].values.T
+        data = np.concatenate([data, land_sea_mask[np.newaxis, ...]], axis=0)
+        
         # add lead time and day of year as features
         lead_time = np.ones((shapes[1], shapes[2])) * (lead_time_idx/7)
         year = valid_time.year
@@ -1110,9 +1270,7 @@ class WeatherYearEnsembleDataset:
             lead_time[np.newaxis, ...],
             sin_day_of_year[np.newaxis, ...],
             cos_day_of_year[np.newaxis, ...]], axis=0)
-        features = torch.tensor(data, dtype=torch.float) 
-
-
+        features = torch.tensor(data[:,1:,:], dtype=torch.float) #70x120x240
 
         # mean std over ensemble predictions for the target variable
         #mu = torch.tensor(data_mean[self.target_variable].values, dtype=torch.float) # (n_lat, n_lon)
