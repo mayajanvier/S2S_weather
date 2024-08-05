@@ -925,7 +925,7 @@ class WeatherYearEnsembleDataset:
             #data = xr.open_dataset(self.trend_path)
             self.trend_model = joblib.load(self.trend_path) 
         else:
-            self.compute_trend("train")
+            self.compute_trend_temp("train")
             self.save_trend("train")
 
         # compute truth trends
@@ -933,12 +933,10 @@ class WeatherYearEnsembleDataset:
             #data = xr.open_dataset(self.trend_truth_path)
             self.trend_model_truth = joblib.load(self.trend_truth_path)
         else:
-            self.compute_trend("obs")
+            self.compute_trend_temp("obs")
             self.save_trend("obs")
 
         # normalize training data
-        # TODO refaire save and load avec netcdf si ca marche 
-        self.scaler = StandardScaler()
         if os.path.exists(self.scaler_path):
             self.load_scaler("train")
         else:
@@ -1006,53 +1004,26 @@ class WeatherYearEnsembleDataset:
         # build climatology by fitting gaussians on train data, date wise, 
         # in a netcdf file, if not done already 
         if self.subset == "train":
-            climato_path = f"{self.obs_path}/climato/{self.target_variable}_{self.valid_years[0]}_{self.valid_years[-1]}_month{self.valid_months[0]}_lead{self.lead_time_idx}.nc"
+            climato_path = f"{self.obs_path}/climato/{self.valid_years[0]}_{self.valid_years[-1]}.nc"
             if not pathlib.Path(climato_path).exists():
-                climato = {}
-                for _,_, forecast_idx_in_file, valid_time, forecast_time in self.data_index:
-                    truth = self.obs.sel(time=valid_time)
-                    # compute wind 
-                    if self.target_variable == "10m_wind_speed":
-                        compute_wind_speedxr(truth,"obs")
-
-                    mu = truth[self.target_variable].values.T
-                    lead_time = self.lead_time_idx
-                    date = valid_time.strftime('%m-%d') # get date without year
-                    if date not in climato.keys():
-                        climato[date] = {"mu": [mu]}
-                    else:
-                        climato[date]["mu"].append(mu) 
-
-                # fit gaussians on mu for each date
-                climato_res = []
-                for date in climato.keys():
-                    mu = np.stack(climato[date]["mu"])
-                    mu_fit, sigma_fit = fit_norm_along_axis(mu, axis=0)
-                    mu_fit = mu_fit[np.newaxis, ...]
-                    sigma_fit = sigma_fit[np.newaxis, ...]
-                    ds = xr.Dataset(
-                        data_vars=dict(
-                            mu=(["date", "latitude", "longitude"], mu_fit),
-                            sigma=(["date", "latitude", "longitude"], sigma_fit),
-                        ),
-                        coords=dict(
-                            longitude=("longitude", self.longitude), # 1D array
-                            latitude=("latitude", self.latitude), # 1D array
-                            date=[date] # single item
-                        )
-                    )
-                    climato_res.append(ds)
-                
-                # save to csv
-                final_ds = xr.concat(climato_res, dim='date')
-                final_ds.to_netcdf(climato_path)
+                valid_times = [x[3] for x in self.data_index]
+                truth = self.obs.sel(time=valid_times)
+                compute_wind_speedxr(truth,"obs")
+                mu = truth.groupby("time.dayofyear").mean(dim=["time"])
+                sigma = truth.groupby("time.dayofyear").std(dim=["time"])
+                # rename to avoid conflict 
+                ds_mu = mu.rename({var: f"{var}_mean" for var in mu.data_vars})
+                ds_sigma = sigma.rename({var: f"{var}_std" for var in sigma.data_vars})
+                # Merge the datasets
+                combined_ds = xr.merge([ds_mu, ds_sigma])
+                # save to file
+                combined_ds.to_netcdf(climato_path)
 
     def fit_scaler(self, type):
-        # TODO add detrending before norm 
         """Get all features and fit the scaler on them."""
         if type == "train":
             files = np.unique([x[0] for x in self.data_index])
-            sample_count = 0 # n 
+            sample_count = 0 
             self.running_mean_map = None
             self.running_var_map = None
             for file_mean in files:
@@ -1060,6 +1031,8 @@ class WeatherYearEnsembleDataset:
                 if self.subset == "test":
                     data = data.rename({'time': 'forecast_time'})
                 new_nb_samples = data["2m_temperature"].isel(longitude=0, latitude=0).values.flatten().shape[0] # delta 
+                # detrend temperature data
+                data["2m_temperature"] = data["2m_temperature"] - self.trend_model.predict(data["2m_temperature"].valid_time.values.astype(np.int64).reshape(-1,1))
                 if sample_count == 0:
                     # compute using xarray methods
                     self.running_mean_map = data.mean(dim=["forecast_time", "prediction_timedelta"]).to_array().values
@@ -1089,6 +1062,8 @@ class WeatherYearEnsembleDataset:
             truth = self.obs.sel(time=valid_times)
             compute_wind_speedxr(truth,"obs")
             truth = truth[["2m_temperature", "10m_wind_speed"]]
+            # detrend temperature data
+            truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(truth["2m_temperature"].time.values.astype(np.int64).reshape(-1,1))
             self.mean_truth = truth.mean(dim="time").to_array().values.transpose(0,2,1)
             self.std_truth = truth.std(dim="time").to_array().values.transpose(0,2,1)
 
@@ -1098,7 +1073,7 @@ class WeatherYearEnsembleDataset:
             valid_times = [x[3] for x in self.data_index]
             truth = self.obs["2m_temperature"].sel(time=valid_times).values
             times = truth.time.values
-            num_times = np.array(pd.to_datetime(times).astype(np.int64))*1e-9 # ins seconds for stability
+            num_times = np.array(pd.to_datetime(times).astype(np.int64))*1e-9 # in seconds for stability
             model = LinearRegression()
             model.fit(num_times.reshape(-1,1), truth.reshape(truth.shape[0], -1))
             self.trend_model_truth = model
@@ -1111,7 +1086,7 @@ class WeatherYearEnsembleDataset:
                 if self.subset == "test":
                     data = data.rename({'time': 'forecast_time'})
                 times = data.valid_time.values
-                num_times = np.array(pd.to_datetime(times).astype(np.int64)) *1e-9 # ins seconds for stability
+                num_times = np.array(pd.to_datetime(times).astype(np.int64)) *1e-9 # in seconds for stability
                 if X is None:
                     X = num_times
                     y = data.values.reshape(data.shape[0], -1)
@@ -1192,16 +1167,40 @@ class WeatherYearEnsembleDataset:
     def save_scaler(self, type):
         """Save the fitted scaler to a file."""
         if type == "train":
-            joblib.dump(self.scaler, self.scaler_path)
+            ds = xr.Dataset(
+                        data_vars=dict(
+                            mean=(["latitude", "longitude"], self.mean_map),
+                            std=(["latitude", "longitude"], self.std_map),
+                        ),
+                        coords=dict(
+                            longitude=("longitude", self.longitude), # 1D array
+                            latitude=("latitude", self.latitude), # 1D array
+                        )
+                    )
+            ds.to_netcdf(self.scaler_path)
         elif type == "obs":
-            joblib.dump(self.scaler_truth, self.scaler_truth_path)
+            ds = xr.Dataset(
+                        data_vars=dict(
+                            mean=(["latitude", "longitude"], self.mean_truth),
+                            std=(["latitude", "longitude"], self.std_truth),
+                        ),
+                        coords=dict(
+                            longitude=("longitude", self.longitude), # 1D array
+                            latitude=("latitude", self.latitude), # 1D array
+                        )
+                    )
+            ds.to_netcdf(self.scaler_truth_path)
     
     def load_scaler(self, type):
         """Load the scaler from a file."""
         if type == "train":
-            self.scaler = joblib.load(self.scaler_path)
+            ds = xr.open_dataset(self.scaler_path)
+            self.mean_map = ds["mean"].values
+            self.std_map = ds["std"].values
         elif type == "obs":
-            self.scaler_truth = joblib.load(self.scaler_truth_path)
+            ds = xr.open_dataset(self.scaler_truth_path)
+            self.mean_truth = ds["mean"].values
+            self.std_truth = ds["std"].values
 
     def __len__(self):
         return len(self.data_index)
@@ -1237,9 +1236,11 @@ class WeatherYearEnsembleDataset:
         # print(truth)
 
         compute_wind_speedxr(truth,"obs")
+        # detrend temperature data
+        truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(truth["2m_temperature"].time.values.astype(np.int64).reshape(-1,1))
         truth = truth[["2m_temperature", "10m_wind_speed"]].to_array().values.transpose(0,2,1) # (2, n_lat, n_lon)
         truth = (truth - self.mean_truth)/self.std_truth
-        truth = torch.tensor(truth, dtype=torch.float)
+        truth = torch.tensor(truth[:,1:,:], dtype=torch.float) # 2x120x240
 
 
         # Normalize features
@@ -1251,7 +1252,9 @@ class WeatherYearEnsembleDataset:
         # data = self.scaler.transform(data) # Normalize features
         # data = data.reshape(shapes[0], shapes[1], shapes[2]) # Reshape back
 
-
+        # detrend temperature data
+        data_mean["2m_temperature"] = data_mean["2m_temperature"] - self.trend_model.predict(data_mean["2m_temperature"].valid_time.values.astype(np.int64).reshape(-1,1))
+        # normalize data 
         data = data_mean.to_array().values # (n_vars, n_lat, n_lon)
         shapes = data.shape
         data = (data-self.mean_map)/self.std_map
@@ -1278,7 +1281,7 @@ class WeatherYearEnsembleDataset:
         valid_time = str(valid_time)
         forecast_time = str(forecast_time)
         return {
-            'input': features, 'truth': truth,
+            'input': features, 'truth': truth, "day_of_year": valid_time.timetuple().tm_yday,
             'valid_time': valid_time, "lead_time": lead_time_idx, "forecast_time": forecast_time
             }   
 
