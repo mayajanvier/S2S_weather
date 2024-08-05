@@ -267,7 +267,13 @@ class DRUnet(nn.Module):
         x7 = self.layer3_up(x6 + x3) # skip connection
         x8 = self.up2(x7)
         x9 = self.layer4_up(x8+ x1) # skip connection
-        return x9
+        
+        # distributional outputs
+        mu_temp, std_temp = x9[:,0,:,:], torch.exp(x9[:,1,:,:]) # to preserve positiveness
+        mu_wind, std_wind = x9[:,2,:,:], torch.exp(x9[:,3,:,:]) # to preserve positiveness
+        temp_dist = Normal(mu_temp, std_temp)
+        wind_dist = Normal(mu_wind, std_wind)
+        return x9, temp_dist, wind_dist
 
 
 if __name__== "__main__":

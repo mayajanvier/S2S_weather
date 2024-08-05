@@ -4,9 +4,9 @@ import xarray as xr
 from metrics import crps_normal
 import torch
 import json
-from processings.dataset import PandasDataset, WeatherDataset, WeatherEnsDataset, WeatherEnsembleDataset, compute_wind_speed
+from processings.dataset import PandasDataset, WeatherDataset, WeatherEnsDataset, WeatherEnsembleDataset, compute_wind_speed, WeatherYearEnsembleDataset
 from torch.utils.data import DataLoader
-from model import MOS, SpatialMOS, SpatialEMOS
+from model import MOS, SpatialMOS, SpatialEMOS, DRUnet
 from torch.distributions import Normal
 
 ### MODEL INFERENCES 
@@ -349,6 +349,117 @@ def specialSpatialEMOS_inference(lead_time, valid_years, train_years, name, trai
             # Write to NetCDF file
             results_file_path = f"{model_folder}/crps_{epoch}.nc"
             final_ds.to_netcdf(results_file_path)
+
+
+def DRUnet_inference(lead_time, valid_years, train_years, train_index, epoch):
+    data_folder = "/home/majanvie/scratch/data" 
+    test_folder = f"{data_folder}/test/EMOS"
+    # TODO build climato 
+    obs_folder = f"{data_folder}/raw/obs"
+    climato_folder = f"{obs_folder}/climato"
+
+    base_dir = f"training_results/DRUnet"
+
+    model_folder = f"{base_dir}/training_{train_index}_unet"
+    climato_path = f"{climato_folder}/{train_years[0]}_{train_years[-1]}.nc"
+    climato = xr.open_dataset(climato_path)
+
+    test_dataset = WeatherYearEnsembleDataset(
+        data_path=test_folder,
+        obs_path=obs_folder,
+        valid_years=valid_years,
+        subset="test")
+    
+    
+
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+
+    # load model weights
+    model = DRUnet(70,4)
+    model.load_state_dict(torch.load(
+        f"{model_folder}/model_{epoch}.pth"
+        ))
+    model.eval()
+
+    weights = np.cos(np.deg2rad(test_dataset.latitude.values)) # (lat,)
+    # repeat to match the shape of the grid
+    weights = np.repeat(weights, 240).reshape(121, 240)
+    weights = weights[1:,:] # 120x240
+    # batch size 1 
+    weights = np.repeat(weights[np.newaxis,:,:], 1, axis=0)
+    weights = torch.tensor(weights, dtype=torch.float) # batch_sizex120x240
+
+
+    # Compute performance metrics
+    results = []
+    for batch in test_loader:
+        X = batch['input']
+        y = batch['truth']
+
+        # climatology
+        valid_time = batch['valid_time']
+        day_of_year = batch["day_of_year"]
+        #valid_date = pd.to_datetime(valid_time).strftime('%m-%d')
+        mu_clim_temp = torch.tensor(climato["2m_temperature_mean"].sel(date=day_of_year).values[0]) 
+        sigma_clim_temp = torch.tensor(climato["2m_temperature_std"].sel(date=day_of_year).values[0]) 
+        mu_clim_wind = torch.tensor(climato["10m_wind_speed_mean"].sel(date=day_of_year).values[0])
+        sigma_clim_wind = torch.tensor(climato["10m_wind_speed_std"].sel(date=day_of_year).values[0]) 
+
+        # model inference
+        maps, out_distrib_temp, out_distrib_wind = model(X)
+
+        # TODO train ou test normalization
+        # denormalize both variables
+        out_distrib_temp.loc = out_distrib_temp.loc * test_dataset.std_map[1,:,:] + test_dataset.mean_map[1,:,:]
+        out_distrib_temp.scale = out_distrib_temp.scale * test_dataset.std_map[1,:,:]
+        out_distrib_wind.loc = out_distrib_wind.loc * test_dataset.std_map[65,:,:] + test_dataset.mean_map[65,:,:]
+        out_distrib_wind.scale = out_distrib_wind.scale * test_dataset.std_map[65,:,:]
+
+        y = y * test_dataset.std_truth + test_dataset.mean_truth
+        y_temp = y[:,0,:,:]
+        y_wind = y[:,1,:,:]
+
+        # detrend temperature
+        y_temp += test_dataset.trend_model_truth.predict(valid_time.astype(np.int64).reshape(-1,1))
+        out_distrib_temp.loc += test_dataset.trend_model.predict(valid_time.astype(np.int64).reshape(-1,1))
+
+        climato_distrib_temp = Normal(mu_clim_temp, sigma_clim_temp)
+        climato_distrib_wind = Normal(mu_clim_wind, sigma_clim_wind)
+
+        crps_temp = crps_normal(out_distrib_temp,y_temp).detach().numpy()  # shape (1, lat, lon)
+        crps_wind = crps_normal(out_distrib_wind,y_wind).detach().numpy()
+        crps_climato_temp = crps_normal(climato_distrib_temp,y_temp).detach().numpy() # shape (1, lat, lon)
+        crps_climato_wind = crps_normal(climato_distrib_wind,y_wind).detach().numpy()
+
+        forecast_time = batch['forecast_time'][0]
+        # Create a multi-index for the time dimension
+        time_index = pd.MultiIndex.from_tuples([(lead_time, forecast_time)], names=["lead_time", "forecast_time"])
+
+        ds = xr.Dataset(
+            data_vars=dict(
+                crps_temperature=(["time", "latitude", "longitude"], crps_temp),
+                crps_wind_speed=(["time", "latitude", "longitude"], crps_wind),
+                crps_temperature_climato=(["time", "latitude", "longitude"], crps_climato_temp),
+                crps_wind_speed_climato=(["time", "latitude", "longitude"], crps_climato_wind),
+            ),
+            coords=dict(
+                longitude=("longitude", test_loader.dataset.longitude), # 1D array
+                latitude=("latitude", test_loader.dataset.latitude), # 1D array
+                time=("time", time_index), # 2D array
+            )
+        )
+        
+        # Reset the index to convert MultiIndex into separate variables
+        ds = ds.reset_index('time')
+        results.append(ds)
+        #full_results.append(ds)
+    train_index += 1
+    final_ds = xr.concat(results, dim='time')
+
+    # Write to NetCDF file
+    results_file_path = f"{model_folder}/crps_{epoch}.nc"
+    final_ds.to_netcdf(results_file_path)
+
 
 ### RAW AND CLIMATOLOGY INFERENCES 
 def ClimatoModel_inference(lead_time, valid_years, train_years):

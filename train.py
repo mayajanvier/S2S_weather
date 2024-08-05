@@ -122,6 +122,82 @@ def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folde
 
     wandb.finish()
 
+def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, batch_size, val_mask, weights, save_every=50):
+    """ training in the normalized and detrented space """
+    # Weight and Biases setup
+    project = "S2S_Unet_ensemble"
+    architecture = "Unet"
+
+    wandb.init(
+    project = project, # set the wandb project where this run will be logged
+    name = name_experiment,     # give the run a name
+    config={                    # track hyperparameters and run metadata
+    "learning_rate": lr,
+    "architecture": architecture,
+    "epochs": nb_epoch,
+    "batch_size": batch_size
+    }
+    )
+    
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    train_losses = []
+    val_losses = []
+    for epoch in range(nb_epoch):
+        model.train()
+        running_loss = 0.0
+
+        for batch in train_loader:
+            X = batch['input']
+            y = batch['truth']
+            optimizer.zero_grad()
+            maps, out_distrib_temp, out_distrib_wind = model(X) # parameters 
+
+            
+            loss = criterion(out_distrib_temp, y[:,0,:,:]) +  criterion(out_distrib_wind, y[:,1,:,:]) # batch loss
+            # weight latitudes
+            loss = loss * weights
+            loss = loss.mean()
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss
+
+        # validation each epoch
+        model.eval()
+        with torch.no_grad():
+            val_loss = 0.0
+            for val_batch in val_loader:
+                val_X = val_batch['input']
+                val_y = val_batch['truth']
+                val_maps, val_out_distrib_temp, val_out_distrib_wind = model(val_X)
+                # weight latitudes and mask
+                val_loss_masked = (criterion(val_out_distrib_temp, val_y[:,0,:,:]) + criterion(val_out_distrib_wind, y[:,1,:,:])) * weights * val_mask # land sea mask
+                val_loss += val_loss_masked.mean()     
+        model.train()
+
+        val_loss = val_loss / len(val_loader)
+        epoch_loss = running_loss / len(train_loader)
+        print(f'Epoch [{epoch + 1}/{nb_epoch}], Loss: {epoch_loss:.4f}, Val Loss: {val_loss:.4f}')
+
+        # log metrics to wandb
+        wandb.log({"Train loss": epoch_loss, "Validation loss": val_loss})
+
+        # save epoch losses to csv file
+        val_losses.append(val_loss.item())
+        train_losses.append(epoch_loss.item())
+        L = pd.DataFrame({'train_loss': train_losses, 'val_loss': val_losses})
+        L.to_csv(result_folder+'/loss.csv', index=False)
+
+        # save model every save_every epochs
+        if epoch > 0:
+            if epoch % save_every == 0:
+                torch.save(model.state_dict(), result_folder+f'/model_{epoch}.pth')
+
+    # save final model        
+    torch.save(model.state_dict(), result_folder+f'/model_{epoch}.pth')
+    #torch.save(model.state_dict(), os.path.join(wandb.run.dir, "model.pth")) # in wandb
+
+    wandb.finish()
 
 def train_sched(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, target_column, batch_size, val_mask, save_every=50, use_sgd=False, momentum=0.9, weight_decay=0):
     # Weight and Biases setup
