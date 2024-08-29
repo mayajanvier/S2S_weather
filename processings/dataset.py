@@ -551,7 +551,7 @@ class WeatherEnsembleDataset:
             'valid_time': valid_time, "lead_time": self.lead_time_idx, "forecast_time": forecast_time
             }   
 
-class WeatherEnsembleDatasetMM:
+class WeatherEnsembleDatasetMM: # no detrend
     """Data in files"""
     def __init__(
         self,
@@ -676,11 +676,11 @@ class WeatherEnsembleDatasetMM:
         self.running_max_map = None
         
         for file_mean in files:
-            data = xr.open_dataset(file_mean) #.isel(prediction_timedelta=self.lead_time_idx)
+            data = xr.open_dataset(file_mean).isel(prediction_timedelta=self.lead_time_idx) # by lead time as before 
             if self.subset == "test":
                 data = data.rename({'time': 'forecast_time'})
-            min_map = data.min(dim=["forecast_time", "prediction_timedelta"], skipna=True).to_array().values
-            max_map = data.max(dim=["forecast_time", "prediction_timedelta"], skipna=True).to_array().values
+            min_map = data.min(dim=["forecast_time"], skipna=True).to_array().values
+            max_map = data.max(dim=["forecast_time"], skipna=True).to_array().values
             # manage NaN
             min_map = np.nan_to_num(min_map, nan=0)
             max_map = np.nan_to_num(max_map, nan=1)
@@ -733,6 +733,11 @@ class WeatherEnsembleDatasetMM:
         data_std = data_std.fillna(1)
 
         # mean std over ensemble predictions for the target variable
+        # normalize priors 
+        #if self.target_variable == "10m_wind_speed":
+        #    mu = torch.tensor(data[65,:,:], dtype=torch.float) # (n_lat, n_lon)
+        #elif self.target_variable == "2m_temperature":
+        #    mu = torch.tensor(data[0,:,:], dtype=torch.float)
         mu = torch.tensor(data_mean[self.target_variable].values, dtype=torch.float) # (n_lat, n_lon)
         sigma = torch.tensor(data_std[self.target_variable].values, dtype=torch.float) # (n_lat, n_lon)
         valid_time = str(valid_time)
@@ -744,7 +749,7 @@ class WeatherEnsembleDatasetMM:
             'valid_time': valid_time, "lead_time": self.lead_time_idx, "forecast_time": forecast_time
             }   
 
-class WeatherEnsembleDatasetMMdetrend:
+class WeatherEnsembleDatasetMMdetrend: # trend x,y 
     """Data in files"""
     def __init__(
         self,
@@ -762,6 +767,10 @@ class WeatherEnsembleDatasetMMdetrend:
         self.valid_years = np.arange(valid_years[0], valid_years[1] + 1)
         self.validation_year_begin = self.valid_years[len(self.valid_years)*9//10]
         self.subset = subset
+        self.trend_path = f"/home/majanvie/scratch/loader_detrend/trend_temp_month{valid_months[0]}_lead{lead_time_idx}.nc"
+        self.trend_path_truth = f"/home/majanvie/scratch/loader_detrend/trend_truth_temp_month{valid_months[0]}_{lead_time_idx}.nc"
+        self.scaler_path = f"/home/majanvie/scratch/loader_detrend/scaler_temp_month{valid_months[0]}_{lead_time_idx}.nc"
+        self.index_path = f"/home/majanvie/scratch/loader_detrend/{self.subset}_index_month{valid_months[0]}_{lead_time_idx}.csv"
 
         # Open observations
         self.obs = xr.open_mfdataset(obs_path + '/*.nc', combine='by_coords')
@@ -769,49 +778,55 @@ class WeatherEnsembleDatasetMMdetrend:
         self.longitude = self.obs.longitude.values
 
         # Build index of counts for files
-        self.data_index = []
-        mean_path = f"{data_path}/mean"
-        std_path = f"{data_path}/std"
-        for f in os.listdir(mean_path):
-            f_mean = f"{mean_path}/{f}"
-            f_std = f"{std_path}/{f}"
-            data_mean = xr.open_dataset(f_mean).isel(prediction_timedelta=self.lead_time_idx) # select lead time
-
-            # Iterate over remaining time dimension
-            if self.subset == "test":
-                time_size = data_mean.sizes["time"]
-            else:
-                time_size = data_mean.sizes["forecast_time"]
-
-            for time_idx in range(time_size):
-                if self.subset == "test":
-                    forecast_time = pd.to_datetime(data_mean.isel(time=time_idx).time.values)
-                    valid_time = pd.to_datetime(data_mean.isel(time=time_idx).valid_time.values)
-                else:
-                    forecast_time = pd.to_datetime(data_mean.isel(forecast_time=time_idx).time.values)
-                    valid_time = pd.to_datetime(data_mean.isel(forecast_time=time_idx).valid_time.values)
-            
-                if valid_time.year not in self.valid_years:
-                    continue
-                elif valid_time.month not in self.valid_months:   
-                    continue
-                self.data_index.append(
-                    (f_mean, f_std, time_idx, valid_time, forecast_time)
-                )
-        
-        # Adapt index for train or val
-        if self.subset == "train":
-            self.data_index = [x for x in self.data_index
-                if x[3].year < self.validation_year_begin 
-            ]
-        elif self.subset == "val":
-            self.data_index = [x for x in self.data_index
-                if x[3].year >= self.validation_year_begin 
-            ]
-        elif self.subset == "test":
-            pass
+        if os.path.exists(self.index_path):
+            self.data_index = pd.read_csv(self.index_path).values.tolist()
         else:
-            raise ValueError("Unrecognized subset")
+            self.data_index = []
+            mean_path = f"{data_path}/mean"
+            std_path = f"{data_path}/std"
+            for f in os.listdir(mean_path):
+                f_mean = f"{mean_path}/{f}"
+                f_std = f"{std_path}/{f}"
+                data_mean = xr.open_dataset(f_mean).isel(prediction_timedelta=self.lead_time_idx) # select lead time
+
+                # Iterate over remaining time dimension
+                if self.subset == "test":
+                    time_size = data_mean.sizes["time"]
+                else:
+                    time_size = data_mean.sizes["forecast_time"]
+
+                for time_idx in range(time_size):
+                    if self.subset == "test":
+                        forecast_time = pd.to_datetime(data_mean.isel(time=time_idx).time.values)
+                        valid_time = pd.to_datetime(data_mean.isel(time=time_idx).valid_time.values)
+                    else:
+                        forecast_time = pd.to_datetime(data_mean.isel(forecast_time=time_idx).time.values)
+                        valid_time = pd.to_datetime(data_mean.isel(forecast_time=time_idx).valid_time.values)
+                
+                    if valid_time.year not in self.valid_years:
+                        continue
+                    elif valid_time.month not in self.valid_months:   
+                        continue
+                    self.data_index.append(
+                        (f_mean, f_std, time_idx, valid_time, forecast_time)
+                    )
+            
+            # Adapt index for train or val
+            if self.subset == "train":
+                self.data_index = [x for x in self.data_index
+                    if x[3].year < self.validation_year_begin 
+                ]
+            elif self.subset == "val":
+                self.data_index = [x for x in self.data_index
+                    if x[3].year >= self.validation_year_begin 
+                ]
+            elif self.subset == "test":
+                pass
+            else:
+                raise ValueError("Unrecognized subset")
+
+            #save index
+            pd.DataFrame(self.data_index).to_csv(self.index_path, index=False)
         
         # build climatology by fitting gaussians on train data, date wise, 
         # in a netcdf file, if not done already 
@@ -857,15 +872,27 @@ class WeatherEnsembleDatasetMMdetrend:
                 final_ds = xr.concat(climato_res, dim='date')
                 final_ds.to_netcdf(climato_path)
         
-        # compute train trends
-        self.compute_trend_temp("train")
+        # compute train trend
+        if os.path.exists(self.trend_path):
+            self.trend_model = joblib.load(self.trend_path)
+        else:
+            self.compute_trend_temp("train")
+            joblib.dump(self.trend_model, self.trend_path)
 
-        # compute truth trends
-        self.compute_trend_temp("obs")
+        # compute truth trend
+        if os.path.exists(self.trend_path_truth):
+            self.trend_model_truth = joblib.load(self.trend_path_truth)
+        else:
+            self.compute_trend_temp("obs")
+            joblib.dump(self.trend_model_truth, self.trend_path_truth)
 
         # normalize
-        self.fit_scaler("train")
-        #self.fit_scaler("obs")
+        if os.path.exists(self.scaler_path):
+            self.load_scaler("train")
+        else:
+            self.fit_scaler("train")
+            self.save_scaler("train")
+        #self.fit_scaler("train")
 
     def fit_scaler(self, type): 
         """Get all features and fit the scaler on them."""
@@ -874,15 +901,17 @@ class WeatherEnsembleDatasetMMdetrend:
             #sample_count = 0
             self.running_min_map = None
             self.running_max_map = None
-
             
             for file_mean in files:
-                data = xr.open_dataset(file_mean) #.isel(prediction_timedelta=self.lead_time_idx)
+                data = xr.open_dataset(file_mean).isel(prediction_timedelta=self.lead_time_idx) # by lead time as before 
+                if self.subset == "test":
+                    data = data.rename({'time': 'forecast_time'})
                 # detrend temperature data
-                data["2m_temperature"] = data["2m_temperature"] - self.trend_model.predict(data["2m_temperature"].valid_time.values.astype(np.int64).reshape(-1,1))
+                X_data = data["2m_temperature"].valid_time.values.astype(np.int64) * 1e-9 # in seconds 
+                data["2m_temperature"] = data["2m_temperature"] - self.trend_model.predict(X_data.reshape(-1,1)).reshape(data["2m_temperature"].shape)
 
-                min_map = data.min(dim=["forecast_time", "prediction_timedelta"], skipna=True).to_array().values
-                max_map = data.max(dim=["forecast_time", "prediction_timedelta"], skipna=True).to_array().values
+                min_map = data.min(dim=["forecast_time"], skipna=True).to_array().values
+                max_map = data.max(dim=["forecast_time"], skipna=True).to_array().values
                 # manage NaN
                 min_map = np.nan_to_num(min_map, nan=0)
                 max_map = np.nan_to_num(max_map, nan=1)
@@ -909,14 +938,15 @@ class WeatherEnsembleDatasetMMdetrend:
     def compute_trend_temp(self, type):
         if type == 'obs':
             valid_times = [x[3] for x in self.data_index]
-            truth = self.obs["2m_temperature"].sel(time=valid_times).values
+            truth = self.obs["2m_temperature"].sel(time=valid_times)
             times = truth.time.values
-            num_times = np.array(pd.to_datetime(times).astype(np.int64))*1e-9 # in seconds for stability
+            truth = truth.values
+            num_times = np.array(pd.to_datetime(times).astype(np.int64)) * 1e-9 # in seconds for stability
             model = LinearRegression()
             model.fit(num_times.reshape(-1,1), truth.reshape(truth.shape[0], -1))
             self.trend_model_truth = model
 
-        elif type == "train":
+        if type == "train":
             files = np.unique([x[0] for x in self.data_index])
             X, y = None, None
             for file in files:
@@ -934,6 +964,47 @@ class WeatherEnsembleDatasetMMdetrend:
             model = LinearRegression()
             model.fit(X.reshape(-1,1), y)
             self.trend_model = model
+
+    
+    def load_scaler(self, type):
+        """Load the scaler from a file."""
+        if type == "train":
+            ds = xr.open_dataset(self.scaler_path)
+            self.running_min_map = ds["min"].values
+            self.running_max_map = ds["max"].values
+        # elif type == "obs":
+        #     ds = xr.open_dataset(self.scaler_truth_path)
+        #     self.mean_truth = ds["mean"].values
+        #     self.std_truth = ds["std"].values
+
+    def save_scaler(self, type):
+        """Save the fitted scaler to a file."""
+        if type == "train":
+            ds = xr.Dataset(
+                        data_vars=dict(
+                            min=(["vars","latitude", "longitude"], self.running_min_map),
+                            max=(["vars","latitude", "longitude"], self.running_max_map),
+                        ),
+                        coords=dict(
+                            longitude=("longitude", self.longitude), # 1D array
+                            latitude=("latitude", self.latitude), # 1D array
+                            vars=("vars", np.arange(self.running_min_map.shape[0]))
+                        )
+                    )
+            ds.to_netcdf(self.scaler_path)
+        # elif type == "obs":
+        #     ds = xr.Dataset(
+        #                 data_vars=dict(
+        #                     mean=(["vars","latitude", "longitude"], self.mean_truth),
+        #                     std=(["vars","latitude", "longitude"], self.std_truth),
+        #                 ),
+        #                 coords=dict(
+        #                     longitude=("longitude", self.longitude), # 1D array
+        #                     latitude=("latitude", self.latitude), # 1D array
+        #                     vars=("vars", np.arange(self.mean_truth.shape[0]))
+        #                 )
+        #             )
+        #     ds.to_netcdf(self.scaler_truth_path)
                    
 
     def __len__(self):
@@ -958,19 +1029,24 @@ class WeatherEnsembleDatasetMMdetrend:
         if self.target_variable == "10m_wind_speed":
             compute_wind_speedxr(truth,"obs")
 
-        # detrend truth temperature data
+        # detrend truth temperature data with Y TREND (test2)  
+        #if self.subset in ["train", "val"]:
         if self.target_variable == "2m_temperature":
+            #print("truth truth", truth["2m_temperature"].values.mean())
             # detrend temperature
-            truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(truth["2m_temperature"].time.values.astype(np.int64).reshape(-1,1))
+            X_truth = truth["2m_temperature"].time.values.astype(np.int64) * 1e-9
+            truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(X_truth.reshape(-1,1)).reshape(truth["2m_temperature"].shape)
+            #print("truth truth", truth["2m_temperature"].values.mean())
 
         
-        truth = truth[self.target_variable].to_array().values.T
+        truth = truth[self.target_variable].values.T
         # normalize truth data
         #truth = (truth - self.mean_truth)/self.std_truth
         truth = torch.tensor(truth, dtype=torch.float) 
 
         # detrend prior and feature temperature data
-        data_mean["2m_temperature"] = data_mean["2m_temperature"] - self.trend_model.predict(data_mean["2m_temperature"].valid_time.values.astype(np.int64).reshape(-1,1))
+        X_data = data_mean["2m_temperature"].valid_time.values.astype(np.int64) * 1e-9
+        data_mean["2m_temperature"] = data_mean["2m_temperature"] - self.trend_model.predict(X_data.reshape(-1,1)).reshape(data_mean["2m_temperature"].shape)
         # Normalize features using min max 
         data = data_mean.to_array().values # (n_vars, n_lat, n_lon)
         data = (data-self.running_min_map)/(self.running_max_map-self.running_min_map + 1e-3)
@@ -978,6 +1054,8 @@ class WeatherEnsembleDatasetMMdetrend:
 
         # add land sea mask feature
         data = np.concatenate([data, land_sea_mask[np.newaxis, ...]], axis=0)
+        # -1,1
+        #data = 2*data - 1
         features = torch.tensor(data, dtype=torch.float) # 67x121x240
 
         # Manage Nan
@@ -993,7 +1071,9 @@ class WeatherEnsembleDatasetMMdetrend:
         return {
             'mu': mu, 'sigma': sigma, 'input': features, 'truth': truth,
             'valid_time': valid_time, "lead_time": self.lead_time_idx, "forecast_time": forecast_time
-            }   
+            }  
+
+
 
 class WeatherEnsembleDataset2:
     """Data in files"""
@@ -1261,20 +1341,20 @@ class WeatherYearEnsembleDataset:
         #print(time.time()-dtime)
 
         # compute train trends
-        # if os.path.exists(self.trend_path):
-        #     #data = xr.open_dataset(self.trend_path)
-        #     self.trend_model = joblib.load(self.trend_path) 
-        # else:
-        #     self.compute_trend_temp("train")
-        #     self.save_trend("train")
+        if os.path.exists(self.trend_path):
+            #data = xr.open_dataset(self.trend_path)
+            self.trend_model = joblib.load(self.trend_path) 
+        else:
+            self.compute_trend_temp("train")
+            self.save_trend("train")
 
         # compute truth trends
-        # if os.path.exists(self.trend_truth_path):
-        #     #data = xr.open_dataset(self.trend_truth_path)
-        #     self.trend_model_truth = joblib.load(self.trend_truth_path)
-        # else:
-        #     self.compute_trend_temp("obs")
-        #     self.save_trend("obs")
+        if os.path.exists(self.trend_truth_path):
+            #data = xr.open_dataset(self.trend_truth_path)
+            self.trend_model_truth = joblib.load(self.trend_truth_path)
+        else:
+            self.compute_trend_temp("obs")
+            self.save_trend("obs")
 
         # normalize training data
         if os.path.exists(self.scaler_path):
@@ -1364,47 +1444,40 @@ class WeatherYearEnsembleDataset:
         """Get all features and fit the scaler on them."""
         if type == "train":
             files = np.unique([x[0] for x in self.data_index])
-            sample_count = 0 
-            self.running_mean_map = None
-            self.running_var_map = None
+            #sample_count = 0
+            self.running_min_map = None
+            self.running_max_map = None
+
             for file_mean in files:
-                data = xr.open_dataset(file_mean)
+                data = xr.open_dataset(file_mean) # all lead times 
                 if self.subset == "test":
                     data = data.rename({'time': 'forecast_time'})
-                new_nb_samples = data["2m_temperature"].isel(longitude=0, latitude=0).values.flatten().shape[0] # delta 
                 # detrend temperature data
-                #data["2m_temperature"] = data["2m_temperature"] - self.trend_model.predict(data["2m_temperature"].valid_time.values.astype(np.int64).reshape(-1,1))
-                if sample_count == 0:
-                    # compute using xarray methods
-                    self.running_mean_map = data.mean(dim=["forecast_time", "prediction_timedelta"]).to_array().values
-                    self.running_var_map = data.var(dim=["forecast_time", "prediction_timedelta"]).to_array().values
-                    sample_count += new_nb_samples
-                else:
-                    # compute new mean and variance
-                    new_data_mean = data.mean(dim=["forecast_time", "prediction_timedelta"]).to_array().values
-                    new_data_var = data.var(dim=["forecast_time", "prediction_timedelta"]).to_array().values # Nan to zero to avoid warning 
-                    
-                    # incremental mean and variance
-                    previous_mean_map = self.running_mean_map
-                    previous_var_map = self.running_var_map
-                    self.running_mean_map = (sample_count * self.running_mean_map + new_nb_samples * new_data_mean) / (sample_count + new_nb_samples)
-                    self.running_var_map = (sample_count * (previous_var_map + previous_mean_map**2) + 
-                                    new_nb_samples * (new_data_var + new_data_mean**2)) / (sample_count+ new_nb_samples) - self.running_mean_map**2          
-                    sample_count += new_nb_samples
-                
-            # manage NaN, negative values etc 
-            self.mean_map = np.where(np.isnan(self.running_mean_map), 0, self.running_mean_map)
-            self.running_var_map = np.where(np.isnan(self.running_var_map), 1, self.running_var_map)
-            self.var_map = np.where(self.running_var_map <= 0, 1, self.running_var_map)
-            self.std_map = np.sqrt(self.var_map)
+                X_data = data["2m_temperature"].valid_time.values.astype(np.int64) * 1e-9 # in seconds 
+                data["2m_temperature"] = data["2m_temperature"] - self.trend_model.predict(X_data.reshape(-1,1)).reshape(data["2m_temperature"].shape)
 
-        elif type == "obs":
+                min_map = data.min(dim=["forecast_time", "prediction_timedelta"], skipna=True).to_array().values
+                max_map = data.max(dim=["forecast_time", "prediction_timedelta"], skipna=True).to_array().values
+                # manage NaN
+                min_map = np.nan_to_num(min_map, nan=0)
+                max_map = np.nan_to_num(max_map, nan=1)
+                #print(min_map.shape)
+
+                if self.running_min_map is None:
+                    self.running_min_map = min_map
+                    self.running_max_map = max_map
+                else:
+                    self.running_min_map = np.minimum(self.running_min_map, min_map)
+                    self.running_max_map = np.maximum(self.running_max_map, max_map)
+        
+        elif type == "obs": # mean/std normalization
             valid_times = [x[3] for x in self.data_index]
             truth = self.obs.sel(time=valid_times)
             compute_wind_speedxr(truth,"obs")
-            truth = truth[["2m_temperature", "10m_wind_speed"]]
-            # detrend temperature data
-            #truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(truth["2m_temperature"].time.values.astype(np.int64).reshape(-1,1))
+            if self.target_variable == "2m_temperature":
+                # detrend temperature
+                truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(truth["2m_temperature"].time.values.astype(np.int64).reshape(-1,1))
+            truth = truth[self.target_variable]
             self.mean_truth = truth.mean(dim="time").to_array().values.transpose(0,2,1)
             self.std_truth = truth.std(dim="time").to_array().values.transpose(0,2,1)
 
@@ -1412,9 +1485,10 @@ class WeatherYearEnsembleDataset:
     def compute_trend_temp(self, type):
         if type == 'obs':
             valid_times = [x[3] for x in self.data_index]
-            truth = self.obs["2m_temperature"].sel(time=valid_times).values
+            truth = self.obs["2m_temperature"].sel(time=valid_times)
             times = truth.time.values
-            num_times = np.array(pd.to_datetime(times).astype(np.int64))*1e-9 # in seconds for stability
+            truth = truth.values
+            num_times = np.array(pd.to_datetime(times).astype(np.int64)) * 1e-9 # in seconds for stability
             model = LinearRegression()
             model.fit(num_times.reshape(-1,1), truth.reshape(truth.shape[0], -1))
             self.trend_model_truth = model
@@ -1444,65 +1518,6 @@ class WeatherYearEnsembleDataset:
             joblib.dump(self.trend_truth_model, self.trend_truth_path)
         elif type == "train":
             joblib.dump(self.trend_model, self.trend_path)
-
-        
-                
-    # def fit_scaler(self, type):
-    #     """Get all features and fit the scaler on them"""
-    #     # Initialize lists to store partial means and variances
-    #     feature_count = 0
-    #     partial_means = None
-    #     partial_variances = None
-    #     i = 0
-
-    #     for file_mean, file_std, forecast_idx_in_file, valid_time, forecast_time, lead_time_idx in self.data_index:
-    #         if type == "train":
-    #             data_mean = xr.open_dataset(file_mean)
-    #             if self.subset == "test":
-    #                 data_mean = data_mean.rename({'time': 'forecast_time'})
-
-    #             data_mean = data_mean.isel(prediction_timedelta=lead_time_idx, forecast_time=forecast_idx_in_file)
-    #             #data_mean = data_mean.fillna(0)  # manage NaN
-    #             data_mean = data_mean.to_array().values  # (n_vars, n_lat, n_lon)
-
-    #         elif type == "obs":
-    #             data_mean = self.obs.sel(time=valid_time)
-    #             compute_wind_speedxr(data_mean,"obs") # compute wind 
-    #             data_mean = data_mean[["2m_temperature", "10m_wind_speed"]].to_array().values.transpose(0,2,1) # (2, n_lat, n_lon)
-
-    #         # Flatten spatial dimensions
-    #         #data_mean = data_mean.reshape(data_mean.shape[0], -1)
-    #         print("data_mean",data_mean.shape)
-
-    #         # Incrementally compute mean and variance
-    #         feature_count += data_mean.shape[0]
-    #         if partial_means is None:
-    #             partial_means = [data_mean]#np.mean(data_mean, axis=0)
-    #             partial_variances = np.var(data_mean, axis=0)
-    #         else:
-    #             new_mean = np.mean(data_mean, axis=0)
-    #             new_variance = np.var(data_mean, axis=0)
-                
-    #             # Update means and variances
-    #             partial_means = (partial_means * (feature_count - data_mean.shape[0]) + new_mean * data_mean.shape[0]) / feature_count
-    #             partial_variances = ((partial_variances * (feature_count - data_mean.shape[0]) + new_variance * data_mean.shape[0])
-    #                                  / feature_count + 
-    #                                  (partial_means - new_mean)**2 * (feature_count - data_mean.shape[0]) * data_mean.shape[0] / feature_count**2)
-    #         i+=1
-    #         if i ==10:
-    #             break
-
-    #     # Set scaler parameters
-    #     if type == "train":
-    #         self.scaler.mean_ = partial_means
-    #         self.scaler.var_ = partial_variances
-    #         self.scaler.scale_ = np.sqrt(partial_variances)
-    #         self.scaler.n_samples_seen_ = feature_count
-    #     elif type =="obs":
-    #         self.scaler_truth.mean_ = partial_means
-    #         self.scaler_truth.var_ = partial_variances
-    #         self.scaler_truth.scale_ = np.sqrt(partial_variances)
-    #         self.scaler_truth.n_samples_seen_ = feature_count
     
 
     def save_scaler(self, type):
@@ -1510,13 +1525,13 @@ class WeatherYearEnsembleDataset:
         if type == "train":
             ds = xr.Dataset(
                         data_vars=dict(
-                            mean=(["vars","latitude", "longitude"], self.mean_map),
-                            std=(["vars","latitude", "longitude"], self.std_map),
+                            min=(["vars","latitude", "longitude"], self.running_min_map),
+                            max=(["vars","latitude", "longitude"], self.running_max_map),
                         ),
                         coords=dict(
                             longitude=("longitude", self.longitude), # 1D array
                             latitude=("latitude", self.latitude), # 1D array
-                            vars=("vars", np.arange(self.mean_map.shape[0]))
+                            vars=("vars", np.arange(self.running_min_map.shape[0]))
                         )
                     )
             ds.to_netcdf(self.scaler_path)
@@ -1538,8 +1553,8 @@ class WeatherYearEnsembleDataset:
         """Load the scaler from a file."""
         if type == "train":
             ds = xr.open_dataset(self.scaler_path)
-            self.mean_map = ds["mean"].values
-            self.std_map = ds["std"].values
+            self.running_min_map = ds["min"].values
+            self.running_max_map = ds["max"].values
         elif type == "obs":
             ds = xr.open_dataset(self.scaler_truth_path)
             self.mean_truth = ds["mean"].values
@@ -1564,49 +1579,28 @@ class WeatherYearEnsembleDataset:
         truth = self.obs.sel(time=valid_time)
         land_sea_mask = truth["land_sea_mask"].values.T
 
-        # Manage Nan
-        #data_mean = data_mean.fillna(0)
-        #data_std = data_std.fillna(0)
-
-        # Normalize ground truth 
-        # compute_wind_speedxr(truth,"obs") # compute wind 
-        # truth = truth[["2m_temperature", "10m_wind_speed"]].to_array().values
-        # truth = torch.tensor(truth.transpose(0,2,1), dtype=torch.float) # (2, n_lat, n_lon)
-        # tshapes = truth.shape
-        # truth = truth.reshape(truth.shape[0], -1) # Flatten spatial dimensions
-        # truth = self.scaler_truth.transform(truth) # Normalize truth
-        # truth = truth.reshape(tshapes[0], tshapes[1], tshapes[2]) # Reshape back
-        # print(truth.shape)
-        # print(truth)
-
+        # compute wind
         compute_wind_speedxr(truth,"obs")
-        # detrend temperature data
-        #truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(truth["2m_temperature"].time.values.astype(np.int64).reshape(-1,1))
+        
+        # detrend truth temperature data
+        X_truth = truth["2m_temperature"].time.values.astype(np.int64) * 1e-9
+        truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(X_truth.reshape(-1,1))
+        # normalize truth temperature data 
         truth = truth[["2m_temperature", "10m_wind_speed"]].to_array().values.transpose(0,2,1) # (2, n_lat, n_lon)
         truth = (truth - self.mean_truth)/self.std_truth
         truth = torch.tensor(truth[:,1:,:], dtype=torch.float) # 2x120x240
 
-
-        # Normalize features
-        # data = data_mean.to_array().values # (n_vars, n_lat, n_lon)
-        # shapes = data.shape
-        # print(shapes)
-        # print(self.scaler.mean_.shape, self.scaler.scale_.shape)
-        # data = data.reshape(data.shape[0], -1) # Flatten spatial dimensions
-        # data = self.scaler.transform(data) # Normalize features
-        # data = data.reshape(shapes[0], shapes[1], shapes[2]) # Reshape back
-
         # detrend temperature data
-        #data_mean["2m_temperature"] = data_mean["2m_temperature"] - self.trend_model.predict(data_mean["2m_temperature"].valid_time.values.astype(np.int64).reshape(-1,1))
+        X_data = data_mean["2m_temperature"].valid_time.values.astype(np.int64) * 1e-9
+        data_mean["2m_temperature"] = data_mean["2m_temperature"] - self.trend_model.predict(X_data.reshape(-1,1))
         # normalize data 
         data = data_mean.to_array().values # (n_vars, n_lat, n_lon)
-        shapes = data.shape
-        data = (data-self.mean_map)/self.std_map
+        data = (data-self.running_min_map)/(self.running_max_map-self.running_min_map + 1e-3)
         data = np.where(np.isnan(data), 0, data)
+
         # add land sea mask feature
-        
         data = np.concatenate([data, land_sea_mask[np.newaxis, ...]], axis=0)
-        #print(data.min(), data.max(), data.mean())
+        data = np.concatenate([data, land_sea_mask[np.newaxis, ...]], axis=0)
         
         # add lead time and day of year as features
         lead_time = np.ones((shapes[1], shapes[2])) * (lead_time_idx/7)
@@ -1836,10 +1830,10 @@ if __name__== "__main__":
     #     break
 
     ### WeatherYearEnsembleDataset
-    data_folder = "/home/majanvie/scratch/data"
-    train_folder = f"{data_folder}/train/EMOS"
-    test_folder = f"{data_folder}/test/EMOS"
-    obs_folder = "/home/majanvie/scratch/data/raw/obs"
+    # data_folder = "/home/majanvie/scratch/data"
+    # train_folder = f"{data_folder}/train/EMOS"
+    # test_folder = f"{data_folder}/test/EMOS"
+    # obs_folder = "/home/majanvie/scratch/data/raw/obs"
 
     # dtime = time.time()
     # train_dataset = WeatherYearEnsembleDataset(
@@ -1863,24 +1857,24 @@ if __name__== "__main__":
     #     break
 
     # test 
-    dtime = time.time()
-    test_dataset = WeatherYearEnsembleDataset(
-        data_path=test_folder,
-        obs_path=obs_folder,
-        valid_years=[2018,2022],
-        subset="test")
-    print("dataset time", time.time()-dtime)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
-    print("Nb of training examples:",len(test_loader.dataset.data_index))
-    for batch in test_loader:
-        print("SHAPES")
-        print(batch['input'].shape, batch['truth'].shape)
-        print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
-        print(" ")
-        print(batch["input"])
-        print(batch["input"].min(), batch["input"].max(), batch["input"].mean())
-        print(batch["truth"].min(), batch["truth"].max(), batch["truth"].mean())
-        break
+    # dtime = time.time()
+    # test_dataset = WeatherYearEnsembleDataset(
+    #     data_path=test_folder,
+    #     obs_path=obs_folder,
+    #     valid_years=[2018,2022],
+    #     subset="test")
+    # print("dataset time", time.time()-dtime)
+    # test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+    # print("Nb of training examples:",len(test_loader.dataset.data_index))
+    # for batch in test_loader:
+    #     print("SHAPES")
+    #     print(batch['input'].shape, batch['truth'].shape)
+    #     print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
+    #     print(" ")
+    #     print(batch["input"])
+    #     print(batch["input"].min(), batch["input"].max(), batch["input"].mean())
+    #     print(batch["truth"].min(), batch["truth"].max(), batch["truth"].mean())
+    #     break
 
     # val
     # dtime = time.time()
@@ -1898,3 +1892,21 @@ if __name__== "__main__":
     #     print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
     #     print(" ")
     #     break
+
+    ## DETREND test1 
+    data_folder = "/home/majanvie/scratch/data" 
+    train_folder = f"{data_folder}/train/EMOS"
+    obs_folder = f"{data_folder}/raw/obs"
+
+    land_sea_mask = xr.open_dataset(f"{obs_folder}/land_sea_mask.nc").land_sea_mask.values.T # (lat, lon)
+    land_sea_mask = torch.tensor(land_sea_mask, dtype=torch.float)
+    
+    train_dataset = WeatherEnsembleDatasetMMdetrend(
+        data_path=train_folder,
+        obs_path=obs_folder,
+        target_variable="2m_temperature",
+        lead_time_idx=14,
+        valid_years=[1996,2017],
+        valid_months=[1,1],
+        subset="train")
+    train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
