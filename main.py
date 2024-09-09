@@ -1,7 +1,7 @@
 import argparse
 import pandas as pd
-from model import MOS, SpatialMOS, SpatialEMOS, DRUnet
-from processings.dataset import PandasDataset, WeatherDataset, WeatherEnsDataset, WeatherEnsembleDataset, WeatherYearEnsembleDataset
+from model import MOS, SpatialMOS, SpatialEMOS, DRUnet, SpatialEMOSprior
+from processings.dataset import PandasDataset, WeatherDataset, WeatherEnsembleDataset, WeatherYearEnsembleDataset, WeatherEnsembleDatasetMM
 from train import train, create_training_folder, train_sched, trainUNet
 from torch.utils.data import DataLoader
 from metrics import crps_normal
@@ -10,6 +10,8 @@ import json
 from sklearn.model_selection import train_test_split
 import xarray as xr
 import numpy as np
+
+
 
 
 def main():
@@ -154,7 +156,7 @@ def main_spatial_ens(variable, lead_time, valid_years, valid_months, batch_size,
     land_sea_mask = torch.tensor(land_sea_mask, dtype=torch.float)
     folder = create_training_folder(name_experiment, base_dir)
     
-    train_dataset = WeatherEnsembleDataset(
+    train_dataset = WeatherEnsembleDatasetMM(
         data_path=train_folder,
         obs_path=obs_folder,
         target_variable=variable,
@@ -164,7 +166,7 @@ def main_spatial_ens(variable, lead_time, valid_years, valid_months, batch_size,
         subset="train")
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    val_dataset = WeatherEnsembleDataset(
+    val_dataset = WeatherEnsembleDatasetMM(
         data_path=train_folder,
         obs_path=obs_folder,
         target_variable=variable,
@@ -175,7 +177,7 @@ def main_spatial_ens(variable, lead_time, valid_years, valid_months, batch_size,
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
     # model setup and training
-    model = SpatialEMOS(66, 121, 240, 4)
+    model = SpatialEMOS(67, 121, 240, 3) #log_nostd
     criterion = crps_normal
 
     # write setup in json
@@ -208,7 +210,7 @@ def main_spatial_ens(variable, lead_time, valid_years, valid_months, batch_size,
         val_mask=land_sea_mask,
         save_every=5)    
     
-def main_Unet_ens(valid_years, batch_size, lr, nb_epoch, name_experiment, base_dir):
+def main_Unet_ens(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir):
     """ Train Unet for wind and temperature, all lead_times, 
     on valid months data, spatially"""
     data_folder = "/home/majanvie/scratch/data" 
@@ -217,6 +219,7 @@ def main_Unet_ens(valid_years, batch_size, lr, nb_epoch, name_experiment, base_d
 
     land_sea_mask = xr.open_dataset(f"{obs_folder}/land_sea_mask.nc").land_sea_mask.values.T # (lat, lon)
     land_sea_mask = torch.tensor(land_sea_mask[1:,:], dtype=torch.float) #120x240
+    land_sea_mask = land_sea_mask.to(device) 
     folder = create_training_folder(name_experiment, base_dir)
     
     train_dataset = WeatherYearEnsembleDataset(
@@ -224,29 +227,44 @@ def main_Unet_ens(valid_years, batch_size, lr, nb_epoch, name_experiment, base_d
         obs_path=obs_folder,
         valid_years=valid_years,
         subset="train")
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=16,
+        #pin_memory=True
+        )
 
     val_dataset = WeatherYearEnsembleDataset(
         data_path=train_folder,
         obs_path=obs_folder,
         valid_years=valid_years,
         subset="val")
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=16,
+        #pin_memory=True
+        )
 
     # model setup and training
-    model = DRUnet(70,4)
+    model = DRUnet(70,4).to(device)
+    print("device", device)
     criterion = crps_normal
-    weights = np.cos(np.deg2rad(train_dataset.latitude.values)) # (lat,)
+    weights = np.cos(np.deg2rad(train_dataset.latitude)) # (120,)
+    #weights = weights[1:] # (120,)
+    weights = weights.reshape(-1, 1) # (120, 1) for broadcasting during multiplication
     # repeat to match the shape of the grid
-    weights = np.repeat(weights, 240).reshape(121, 240)
-    weights = weights[1:,:] # 120x240
-    # batch size
-    weights = np.repeat(weights[np.newaxis,:,:], batch_size, axis=0) # 120x240 -> 1x120x240 -> batch_sizex120x240
+    #weights = np.repeat(weights, 240).reshape(121, 240)
+    #weights = weights[1:,:] # 120x240
+    # batch size: actually not needed, spatial weighting only 
+    #weights = np.repeat(weights[np.newaxis,:,:], batch_size, axis=0) # 120x240 -> 1x120x240 -> batch_sizex120x240
     weights = torch.tensor(weights, dtype=torch.float) # batch_sizex120x240
+    weights = weights.to(device)
 
     # write setup in json
     params = {
-        "variable": variable,
         "valid_years": valid_years,
         "batch_size": batch_size,
         "lr": lr,
@@ -270,6 +288,7 @@ def main_Unet_ens(valid_years, batch_size, lr, nb_epoch, name_experiment, base_d
         batch_size=batch_size,
         val_mask=land_sea_mask,
         weights = weights,
+        device = device,
         save_every=5)    
 
 def main_spatial_ens2(variable, lead_time, valid_years, valid_months, batch_size, lr, nb_epoch, name_experiment, base_dir):
@@ -369,7 +388,7 @@ def main_spatial_ens3(variable, lead_time, valid_years, valid_months, batch_size
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
     # model setup and training
-    model = SpatialEMOSinit(66, 121, 240, 4)
+    model = SpatialEMOSprior(66, 121, 240, 4)
     criterion = crps_normal
 
     # write setup in json
@@ -510,37 +529,40 @@ if __name__ == "__main__":
 
 
     ### Spatial month EMOS
-    parser = argparse.ArgumentParser(description="Run spatial month experiment.")
-    parser.add_argument('-lead', '--lead_idx', type=int, required=True, help="Lead index to use in the experiment")
-    args = parser.parse_args()
-    lead_idx = args.lead_idx
+    # parser = argparse.ArgumentParser(description="Run spatial month experiment.")
+    # parser.add_argument('-lead', '--lead_idx', type=int, required=True, help="Lead index to use in the experiment")
+    # args = parser.parse_args()
+    # lead_idx = args.lead_idx
 
-    base_dir = f"training_results/spatial_month_ensemble/lead{lead_idx}"
-    for month in range(1,2):
-        print(f"Month {month}")
-        for variable in ["2m_temperature","10m_wind_speed"]:
-            print(f"Variable {variable}")
-            if variable == "2m_temperature":
-                nb_epochs = 10
-            elif variable == "10m_wind_speed":
-                nb_epochs = 15
-            main_spatial_ens(
-                variable,
-                lead_time=lead_idx,
-                valid_years=[1996,2017],
-                valid_months=[month, month],
-                batch_size=128,
-                lr=0.01,
-                nb_epoch=nb_epochs,
-                name_experiment=f"spatial_month{month}_{variable}_lead={lead_idx}_normf",
-                base_dir=base_dir)
+    # base_dir = f"training_results/spatial_month_ensemble/lead{lead_idx}"
+    # for month in range(1,2):
+    #     print(f"Month {month}")
+    #     for variable in ["2m_temperature","10m_wind_speed"]:
+    #         print(f"Variable {variable}")
+    #         if variable == "2m_temperature":
+    #             nb_epochs = 20
+    #         elif variable == "10m_wind_speed":
+    #             nb_epochs = 15
+    #         main_spatial_ens(
+    #             variable,
+    #             lead_time=lead_idx,
+    #             valid_years=[1996,2017],
+    #             valid_months=[month, month],
+    #             batch_size=128,
+    #             lr=0.01,
+    #             nb_epoch=nb_epochs,
+    #             name_experiment=f"spatial_month{month}_{variable}_lead={lead_idx}_log_nostd_MM_lead",
+    #             base_dir=base_dir)
     
     # DRUnet
     base_dir = f"training_results/DRUnet"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
     main_Unet_ens(
         valid_years=[1996,2017],
-        batch_size=128,
-        lr=0.01,
-        nb_epoch=15,
+        batch_size=64,
+        lr=0.0001,
+        nb_epoch=50,
         name_experiment=f"DRUnet",
+        device=device,
         base_dir=base_dir)

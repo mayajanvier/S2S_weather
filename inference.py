@@ -356,16 +356,22 @@ def specialSpatialEMOS_inference_detrend(lead_time, valid_years, train_years, na
     test_folder = f"{data_folder}/test/EMOS"
     obs_folder = f"{data_folder}/raw/obs"
     climato_folder = f"{obs_folder}/climato"
-    trend_path = f"/home/majanvie/S2S_weather/trend_temp.nc"
+    #trend_path = f"/home/majanvie/S2S_weather/trend_temp.nc"
 
-    base_dir = f"training_results/spatial_month_ensemble/lead{lead_time}"
+    base_dir = f"training_results/spatial_month_ensemble_detrend/lead{lead_time}"
     full_results = []   
     #epoch = 9
-    for month in range(1,2):
+    train_index = 1
+    #train_index = 25
+    for month in range(1,13):
         print(f"Month {month}")
-        for variable in [var]:
+        for variable in ["2m_temperature"]: #, "10m_wind_speed"]:
+            if variable == "2m_temperature":
+                epoch = 9
+            elif variable == "10m_wind_speed":
+                epoch = 14
             print(f"Variable {variable}")
-            model_folder = f"{base_dir}/training_{train_index}_spatial_month{month}_{variable}_lead={lead_time}_{name}"
+            model_folder = f"{base_dir}/training_{train_index}_spatial_month{month}_{variable}_lead={lead_time}"
             climato_path = f"{climato_folder}/{variable}_{train_years[0]}_{train_years[-1]}_month{month}_lead{lead_time}.nc"
             climato = xr.open_dataset(climato_path)
 
@@ -377,22 +383,6 @@ def specialSpatialEMOS_inference_detrend(lead_time, valid_years, train_years, na
                 valid_years=valid_years,
                 valid_months=[month,month],
                 subset="test")
-
-            #trend_model = joblib.load("trend_truth_temp_14.nc")
-            
-            # TODO save trend somewhere instead of computing it 
-            # if io.exists(trend_path):
-            #     trend_model = joblib.load(trend_path)
-            # else:
-            #     train_dataset = WeatherEnsembleDatasetMMdetrend(
-            #         data_path=train_folder,
-            #         obs_path=obs_folder,
-            #         target_variable=variable,
-            #         lead_time_idx=lead_time,
-            #         valid_years=valid_years,
-            #         valid_months=valid_months,
-            #         subset="train")
-            #     trend_model = train_dataset.trend_model # trend model from TRAIN 
 
             test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
             # load model weights
@@ -424,8 +414,8 @@ def specialSpatialEMOS_inference_detrend(lead_time, valid_years, train_years, na
                 if variable == "2m_temperature":
                     Xt = pd.to_datetime(valid_time).astype(np.int64)[0] * 1e-9
                     trend = test_dataset.trend_model_truth.predict(Xt.reshape(-1,1)).reshape(y.shape)
-                    print("truth detrended", y.mean())
-                    print("pred detrended", out_distrib.loc.mean())
+                    #print("truth detrended", y.mean())
+                    #print("pred detrended", out_distrib.loc.mean())
                     print("truth", (y+ trend).mean())
                     print("pred", (out_distrib.loc+ torch.tensor(trend, dtype=out_distrib.loc.dtype)).mean())
                     y += trend
@@ -471,7 +461,7 @@ def specialSpatialEMOS_inference_detrend(lead_time, valid_years, train_years, na
             results_file_path = f"{model_folder}/crps_{epoch}.nc"
             final_ds.to_netcdf(results_file_path)
 
-def DRUnet_inference(lead_time, valid_years, train_years, train_index, epoch):
+def DRUnet_inference(valid_years, train_years, train_index, epoch, device):
     data_folder = "/home/majanvie/scratch/data" 
     test_folder = f"{data_folder}/test/EMOS"
     # TODO build climato 
@@ -480,7 +470,7 @@ def DRUnet_inference(lead_time, valid_years, train_years, train_index, epoch):
 
     base_dir = f"training_results/DRUnet"
 
-    model_folder = f"{base_dir}/training_{train_index}_unet"
+    model_folder = f"{base_dir}/training_{train_index}_DRUnet"
     climato_path = f"{climato_folder}/{train_years[0]}_{train_years[-1]}.nc"
     climato = xr.open_dataset(climato_path)
 
@@ -490,65 +480,61 @@ def DRUnet_inference(lead_time, valid_years, train_years, train_index, epoch):
         valid_years=valid_years,
         subset="test")
 
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+    print("test dataset", len(test_dataset))
+
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=16)
 
     # load model weights
-    model = DRUnet(70,4)
+    model = DRUnet(70,4).to(device)
     model.load_state_dict(torch.load(
         f"{model_folder}/model_{epoch}.pth"
         ))
     model.eval()
 
-    weights = np.cos(np.deg2rad(test_dataset.latitude.values)) # (lat,)
-    # repeat to match the shape of the grid
-    weights = np.repeat(weights, 240).reshape(121, 240)
-    weights = weights[1:,:] # 120x240
-    # batch size 1 
-    weights = np.repeat(weights[np.newaxis,:,:], 1, axis=0)
-    weights = torch.tensor(weights, dtype=torch.float) # batch_sizex120x240
-
-
     # Compute performance metrics
     results = []
     for batch in test_loader:
-        X = batch['input']
-        y = batch['truth']
+        X = batch['input'].to(device)
+        y = batch['truth'].to(device)
+        lead_time = batch['lead_time'].item()
 
         # climatology
         valid_time = batch['valid_time']
         day_of_year = batch["day_of_year"]
         #valid_date = pd.to_datetime(valid_time).strftime('%m-%d')
-        mu_clim_temp = torch.tensor(climato["2m_temperature_mean"].sel(date=day_of_year).values[0]) 
-        sigma_clim_temp = torch.tensor(climato["2m_temperature_std"].sel(date=day_of_year).values[0]) 
-        mu_clim_wind = torch.tensor(climato["10m_wind_speed_mean"].sel(date=day_of_year).values[0])
-        sigma_clim_wind = torch.tensor(climato["10m_wind_speed_std"].sel(date=day_of_year).values[0]) 
+        mu_clim_temp = torch.tensor(climato["2m_temperature_mean"].sel(dayofyear=day_of_year).values[0]).T[1:,:] 
+        sigma_clim_temp = torch.tensor(climato["2m_temperature_std"].sel(dayofyear=day_of_year).values[0]).T[1:,:] 
+        mu_clim_wind = torch.tensor(climato["10m_wind_speed_mean"].sel(dayofyear=day_of_year).values[0]).T[1:,:]
+        sigma_clim_wind = torch.tensor(climato["10m_wind_speed_std"].sel(dayofyear=day_of_year).values[0]).T[1:,:] 
 
         # model inference
         maps, out_distrib_temp, out_distrib_wind = model(X)
 
-        # TODO train ou test normalization
-        # denormalize both variables
-        out_distrib_temp.loc = out_distrib_temp.loc * test_dataset.std_map[1,:,:] + test_dataset.mean_map[1,:,:]
-        out_distrib_temp.scale = out_distrib_temp.scale * test_dataset.std_map[1,:,:]
-        out_distrib_wind.loc = out_distrib_wind.loc * test_dataset.std_map[65,:,:] + test_dataset.mean_map[65,:,:]
-        out_distrib_wind.scale = out_distrib_wind.scale * test_dataset.std_map[65,:,:]
+        # denormalize both variables (train normalization)
+        # out_distrib_temp.loc = out_distrib_temp.loc * test_dataset.std_map[1,:,:] + test_dataset.mean_map[1,:,:]
+        # out_distrib_temp.scale = out_distrib_temp.scale * test_dataset.std_map[1,:,:]
+        # out_distrib_wind.loc = out_distrib_wind.loc * test_dataset.std_map[65,:,:] + test_dataset.mean_map[65,:,:]
+        # out_distrib_wind.scale = out_distrib_wind.scale * test_dataset.std_map[65,:,:]
 
-        y = y * test_dataset.std_truth + test_dataset.mean_truth
+        # y = y * test_dataset.std_truth + test_dataset.mean_truth
+
         y_temp = y[:,0,:,:]
         y_wind = y[:,1,:,:]
 
-        # detrend temperature
-        Xt = valid_time.astype(np.int64) * 1e-9
-        y_temp += test_dataset.trend_model_truth.predict(Xt.reshape(-1,1))
-        out_distrib_temp.loc += test_dataset.trend_model.predict(Xt.reshape(-1,1))
+        # add trend temperature (trend y)
+        Xt = pd.to_datetime(valid_time).astype(np.int64)[0] * 1e-9
+        trend = test_dataset.trend_model_truth.predict(Xt.reshape(-1,1)).reshape(1, 121, 240)[:,1:,:]
+        y_temp += torch.tensor(trend, dtype=y_temp.dtype).to(device)
+        out_distrib_temp.loc += torch.tensor(trend, dtype=out_distrib_temp.loc.dtype).to(device)
 
-        climato_distrib_temp = Normal(mu_clim_temp, sigma_clim_temp)
-        climato_distrib_wind = Normal(mu_clim_wind, sigma_clim_wind)
+        climato_distrib_temp = Normal(mu_clim_temp.to(device), sigma_clim_temp.to(device))
+        climato_distrib_wind = Normal(mu_clim_wind.to(device), sigma_clim_wind.to(device))
 
-        crps_temp = crps_normal(out_distrib_temp,y_temp).detach().numpy()  # shape (1, lat, lon)
-        crps_wind = crps_normal(out_distrib_wind,y_wind).detach().numpy()
-        crps_climato_temp = crps_normal(climato_distrib_temp,y_temp).detach().numpy() # shape (1, lat, lon)
-        crps_climato_wind = crps_normal(climato_distrib_wind,y_wind).detach().numpy()
+        crps_temp = crps_normal(out_distrib_temp,y_temp).cpu().detach().numpy()  # shape (1, lat, lon)
+        crps_wind = crps_normal(out_distrib_wind,y_wind).cpu().detach().numpy()
+        crps_climato_temp = crps_normal(climato_distrib_temp,y_temp).cpu().detach().numpy() # shape (1, lat, lon)
+        crps_climato_wind = crps_normal(climato_distrib_wind,y_wind).cpu().detach().numpy()
+
 
         forecast_time = batch['forecast_time'][0]
         # Create a multi-index for the time dimension
@@ -565,6 +551,8 @@ def DRUnet_inference(lead_time, valid_years, train_years, train_index, epoch):
                 longitude=("longitude", test_loader.dataset.longitude), # 1D array
                 latitude=("latitude", test_loader.dataset.latitude), # 1D array
                 time=("time", time_index), # 2D array
+                #lead_time=("lead_time", [lead_time]),
+                #forecast_time=("forecast_time", [forecast_time])
             )
         )
         
@@ -572,7 +560,6 @@ def DRUnet_inference(lead_time, valid_years, train_years, train_index, epoch):
         ds = ds.reset_index('time')
         results.append(ds)
         #full_results.append(ds)
-    train_index += 1
     final_ds = xr.concat(results, dim='time')
 
     # Write to NetCDF file
@@ -752,12 +739,19 @@ def RawIFS_inference(lead_time, valid_years, train_years):
 
 
 if __name__ == "__main__":
-    for lead_time in [14]:
+    valid_years = [2018,2022]
+    train_years = [1996,2017]
+    
+    #for lead_time in [21,28]:
         #ClimatoModel_inference(lead_time, [2018,2022],train_years=[1996,2017])
         #RawIFS_inference(lead_time, [2018,2022], [1996,2017])
         #SpatialEMOS_inference(lead_time, [2018,2022], [1996,2017])
         #specialSpatialEMOS_inference(lead_time, [2018,2022], [1996,2017], "log_nostd_MM_lead", 73, 19, "2m_temperature") # emos 3
-        specialSpatialEMOS_inference_detrend(lead_time, [2018,2022], [1996,2017], "log_MM_detrend", 77 , 9, "2m_temperature") # detrend MM 
+        #specialSpatialEMOS_inference_detrend(lead_time, [2018,2022], [1996,2017], "log_MM_detrend", 77 , 9, "2m_temperature") # detrend MM 
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)    
+    DRUnet_inference(valid_years, train_years, train_index=1, epoch=5, device=device)
 
 
 
