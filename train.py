@@ -12,6 +12,7 @@ from processings.dataset import PandasDataset, WeatherDataset
 from processings.format_data import compute_wind_speed
 from sklearn.model_selection import train_test_split
 import wandb
+import psutil
 
 def create_training_folder(name, base_dir='training_results'):
     # Create a new directory with a unique name
@@ -54,27 +55,27 @@ def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folde
             sigma = batch['sigma']
             X = batch['input']
             y = batch['truth']
-            print("min max")
-            print(torch.min(X), torch.max(X))
-            print(torch.min(mu), torch.max(mu))
-            print(torch.min(sigma), torch.max(sigma))
+            # print("min max")
+            # print(torch.min(X), torch.max(X))
+            # print(torch.min(mu), torch.max(mu))
+            # print(torch.min(sigma), torch.max(sigma))
             # print nan in input
-            print("nan")
-            print(torch.isnan(X).sum())
-            print(torch.isnan(mu).sum())
-            print(torch.isnan(sigma).sum())
+            # print("nan")
+            # print(torch.isnan(X).sum())
+            # print(torch.isnan(mu).sum())
+            # print(torch.isnan(sigma).sum())
 
             # print zeros
-            print("null")
-            print(torch.sum(X == 0))
-            print(torch.sum(mu == 0))
-            print(torch.sum(sigma == 0))
+            # print("null")
+            # print(torch.sum(X == 0))
+            # print(torch.sum(mu == 0))
+            # print(torch.sum(sigma == 0))
 
-            # inf
-            print('inf')
-            print(torch.isinf(X).sum())
-            print(torch.isinf(mu).sum())
-            print(torch.isinf(sigma).sum())
+            # # inf
+            # print('inf')
+            # print(torch.isinf(X).sum())
+            # print(torch.isinf(mu).sum())
+            # print(torch.isinf(sigma).sum())
             optimizer.zero_grad()
             out_distrib = model(mu, sigma, X, y) # parameters 
 
@@ -122,11 +123,12 @@ def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folde
 
     wandb.finish()
 
-def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, batch_size, val_mask, weights, save_every=50):
+def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, batch_size, val_mask, weights, device, save_every=50):
     """ training in the normalized and detrented space """
     # Weight and Biases setup
     project = "S2S_Unet_ensemble"
     architecture = "Unet"
+
 
     wandb.init(
     project = project, # set the wandb project where this run will be logged
@@ -138,6 +140,9 @@ def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_f
     "batch_size": batch_size
     }
     )
+
+    print("val mask", val_mask.shape)
+    print("weights", weights.shape)
     
     optimizer = optim.Adam(model.parameters(), lr=lr)
     train_losses = []
@@ -145,13 +150,28 @@ def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_f
     for epoch in range(nb_epoch):
         model.train()
         running_loss = 0.0
+        # for _ in range(20):
+        #     X = torch.rand((64,70,120,240)).to(device)
+        #     y = torch.rand((64,70,120,240)).to(device)
+        #     optimizer.zero_grad()
+        #     maps, out_distrib_temp, out_distrib_wind = model(X) # parameters 
 
+        #     print()
+        #     loss = criterion(out_distrib_temp, y[:,0,:,:]) +  criterion(out_distrib_wind, y[:,1,:,:]) # batch loss
+        #     # weight latitudes
+        #     loss = loss * weights
+        #     loss = loss.mean()
+        #     loss.backward()
+        #     optimizer.step()
+
+        #     running_loss += loss
+        #     print("Loss: ", running_loss)
+        i = 0
         for batch in train_loader:
-            X = batch['input']
-            y = batch['truth']
+            X = batch['input'].to(device)
+            y = batch['truth'].to(device)
             optimizer.zero_grad()
             maps, out_distrib_temp, out_distrib_wind = model(X) # parameters 
-
             
             loss = criterion(out_distrib_temp, y[:,0,:,:]) +  criterion(out_distrib_wind, y[:,1,:,:]) # batch loss
             # weight latitudes
@@ -160,19 +180,26 @@ def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_f
             loss.backward()
             optimizer.step()
 
-            running_loss += loss
+            running_loss += loss.item() # convert to float to avoid accumulation of the graph
+        
+            if i% 100 == 0:
+                print(i, psutil.Process().memory_info().rss / (1024 * 1024), "temp", out_distrib_temp.loc.mean().item(), out_distrib_temp.scale.mean().item(), "wind", out_distrib_wind.loc.mean().item(), out_distrib_wind.scale.mean().item())
+                print(f'Loss{i}', running_loss)
+            i += 1
+            del maps, out_distrib_temp, out_distrib_wind # free memory
 
         # validation each epoch
         model.eval()
         with torch.no_grad():
             val_loss = 0.0
             for val_batch in val_loader:
-                val_X = val_batch['input']
-                val_y = val_batch['truth']
+                val_X = val_batch['input'].to(device)
+                val_y = val_batch['truth'].to(device)
                 val_maps, val_out_distrib_temp, val_out_distrib_wind = model(val_X)
                 # weight latitudes and mask
-                val_loss_masked = (criterion(val_out_distrib_temp, val_y[:,0,:,:]) + criterion(val_out_distrib_wind, y[:,1,:,:])) * weights * val_mask # land sea mask
-                val_loss += val_loss_masked.mean()     
+                val_loss_masked = (criterion(val_out_distrib_temp, val_y[:,0,:,:]) + criterion(val_out_distrib_wind, val_y[:,1,:,:])) * weights * val_mask # land sea mask
+                val_loss += val_loss_masked.mean().item() # convert to float to avoid accumulation of the graph    
+                del val_maps, val_out_distrib_temp, val_out_distrib_wind # free memory 
         model.train()
 
         val_loss = val_loss / len(val_loader)
@@ -183,8 +210,8 @@ def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_f
         wandb.log({"Train loss": epoch_loss, "Validation loss": val_loss})
 
         # save epoch losses to csv file
-        val_losses.append(val_loss.item())
-        train_losses.append(epoch_loss.item())
+        val_losses.append(val_loss)
+        train_losses.append(epoch_loss)
         L = pd.DataFrame({'train_loss': train_losses, 'val_loss': val_losses})
         L.to_csv(result_folder+'/loss.csv', index=False)
 
@@ -192,6 +219,7 @@ def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_f
         if epoch > 0:
             if epoch % save_every == 0:
                 torch.save(model.state_dict(), result_folder+f'/model_{epoch}.pth')
+
 
     # save final model        
     torch.save(model.state_dict(), result_folder+f'/model_{epoch}.pth')
