@@ -84,6 +84,7 @@ def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folde
             optimizer.step()
 
             running_loss += loss
+            del mu, sigma, X, y, out_distrib # free memory
 
         # validation each epoch
         model.eval()
@@ -96,7 +97,8 @@ def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folde
                 val_y = val_batch['truth']
                 val_out_distrib = model(val_mu, val_sigma, val_X, val_y)
                 val_loss_masked = criterion(val_out_distrib, val_y) * val_mask # land sea mask
-                val_loss += val_loss_masked.mean()     
+                val_loss += val_loss_masked.mean()   
+                del val_mu, val_sigma, val_X, val_y, val_out_distrib # free memory  
         model.train()
 
         val_loss = val_loss / len(val_loader)
@@ -150,6 +152,7 @@ def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_f
     for epoch in range(nb_epoch):
         model.train()
         running_loss = 0.0
+        # test 
         # for _ in range(20):
         #     X = torch.rand((64,70,120,240)).to(device)
         #     y = torch.rand((64,70,120,240)).to(device)
