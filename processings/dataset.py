@@ -1022,24 +1022,26 @@ class WeatherEnsembleDatasetMMdetrend: # trend x,y
             data_std = data_std.rename({'time': 'forecast_time'})
         data_mean = data_mean.isel(prediction_timedelta=self.lead_time_idx, forecast_time=forecast_idx_in_file)
         data_std = data_std.isel(prediction_timedelta=self.lead_time_idx, forecast_time=forecast_idx_in_file)
-        truth = self.obs.sel(time=valid_time)
-        land_sea_mask = truth["land_sea_mask"].values.T
+        truth = self.obs.sel(time=valid_time).transpose("latitude", "longitude") # initially (lon,lat)
+        land_sea_mask = truth["land_sea_mask"].values
 
         # compute wind 
         if self.target_variable == "10m_wind_speed":
             compute_wind_speedxr(truth,"obs")
 
         # detrend truth temperature data with Y TREND (test2)  
-        #if self.subset in ["train", "val"]:
-        if self.target_variable == "2m_temperature":
-            #print("truth truth", truth["2m_temperature"].values.mean())
-            # detrend temperature
-            X_truth = truth["2m_temperature"].time.values.astype(np.int64) * 1e-9
-            truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(X_truth.reshape(-1,1)).reshape(truth["2m_temperature"].shape)
-            #print("truth truth", truth["2m_temperature"].values.mean())
+        if self.subset in ["train", "val"]:
+            if self.target_variable == "2m_temperature":
+                # detrend temperature
+                X_truth = truth["2m_temperature"].time.values.astype(np.int64) * 1e-9
+                #print("SHAPE", truth["2m_temperature"].shape)
+                shape = truth["2m_temperature"].shape
+                # truth trend saved in (lon,lat) instead of (lat,lon)
+                truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(X_truth.reshape(-1,1)).reshape(shape[1],shape[0]).T
+                #print("truth truth", truth["2m_temperature"].values.mean())
 
         
-        truth = truth[self.target_variable].values.T
+        truth = truth[self.target_variable].values
         # normalize truth data
         #truth = (truth - self.mean_truth)/self.std_truth
         truth = torch.tensor(truth, dtype=torch.float) 
@@ -1067,6 +1069,9 @@ class WeatherEnsembleDatasetMMdetrend: # trend x,y
         sigma = torch.tensor(data_std[self.target_variable].values, dtype=torch.float) # (n_lat, n_lon)
         valid_time = str(valid_time)
         forecast_time = str(forecast_time)
+        # STOP MEMORY LEAK
+        data_mean.close()
+        data_std.close()
         
         return {
             'mu': mu, 'sigma': sigma, 'input': features, 'truth': truth,
@@ -1312,21 +1317,24 @@ class WeatherYearEnsembleDataset:
     ):
         #self.lead_time_idx = round(lead_time_idx/7)
         #self.target_variable = target_variable
+        self.idx2lead = {0:0, 1:7, 2:14, 3:21, 4:28, 5:35, 6:39}
         self.data_path = data_path
         self.obs_path = obs_path
         self.valid_years = np.arange(valid_years[0], valid_years[1] + 1)
         self.validation_year_begin = self.valid_years[len(self.valid_years)*9//10]
         self.subset = subset
         self.index_path = f"/home/majanvie/scratch/loader/{subset}_index.csv"
-        self.scaler_path = f"/home/majanvie/scratch/loader/{subset}_scaler.nc"
-        self.scaler_truth_path = f"/home/majanvie/scratch/loader/{subset}_scaler_truth.nc"
-        self.trend_path = f"/home/majanvie/scratch/loader/{subset}_trend_temp.nc"
-        self.trend_truth_path = f"/home/majanvie/scratch/loader/{subset}_trend_temp_truth.nc"
+        #self.scaler_path = f"/home/majanvie/scratch/loader/scaler.nc"
+        #self.scaler_truth_path = f"/home/majanvie/scratch/loader/scaler_truth.nc"
+        self.trend_path = f"/home/majanvie/scratch/loader/trend_temp.nc"
+        self.trend_truth_path = f"/home/majanvie/scratch/loader/trend_temp_truth.nc"
 
         # Open observations
         self.obs = xr.open_mfdataset(obs_path + '/*.nc', combine='by_coords')
-        self.latitude = self.obs.latitude.values
+        self.latitude = self.obs.latitude.values[21:]
         self.longitude = self.obs.longitude.values
+        self.lat_norm = (self.latitude - self.latitude.min())/(self.latitude.max() - self.latitude.min())
+        self.lon_norm = (self.longitude - self.longitude.min())/(self.longitude.max() - self.longitude.min())
 
         # build index of counts for files
         if os.path.exists(self.index_path):
@@ -1336,42 +1344,49 @@ class WeatherYearEnsembleDataset:
             print("building index")
             self.build_index()
             self.save_index()
+        
+        # not give original forecast 
+        # TODO build scaler trend for them 
+        self.data_index = [x for x in self.data_index
+                if x[5] > 0
+            ]
 
         print("len index", len(self.data_index))
-        #print(time.time()-dtime)
 
-        # compute train trends
+        # build climato
+        self.build_climato()
+
+        # compute train trend
         if os.path.exists(self.trend_path):
-            #data = xr.open_dataset(self.trend_path)
             self.trend_model = joblib.load(self.trend_path) 
         else:
             self.compute_trend_temp("train")
-            self.save_trend("train")
+            self.save_trend_temp("train")
 
         # compute truth trends
         if os.path.exists(self.trend_truth_path):
-            #data = xr.open_dataset(self.trend_truth_path)
             self.trend_model_truth = joblib.load(self.trend_truth_path)
         else:
             self.compute_trend_temp("obs")
-            self.save_trend("obs")
+            self.save_trend_temp("obs")
 
         # normalize training data
-        if os.path.exists(self.scaler_path):
-            self.load_scaler("train")
-            print("loading train scaler")
-        else:
-            self.fit_scaler("train")
-            self.save_scaler("train")
+        # if os.path.exists(self.scaler_path):
+        #     print("loading scaler")
+        #     self.load_scaler("train")   
+        # else:
+        #     print("building scaler")
+        #     self.fit_scaler("train")
+        #     self.save_scaler("train")
 
         # normalize truth data 
-        self.scaler_truth = StandardScaler()
-        if os.path.exists(self.scaler_truth_path):
-            self.load_scaler("obs")
-            print("loading truth scaler")
-        else:
-            self.fit_scaler("obs")
-            self.save_scaler("obs")
+        # self.scaler_truth = StandardScaler()
+        # if os.path.exists(self.scaler_truth_path):
+        #     self.load_scaler("obs")
+        #     print("loading truth scaler")
+        # else:
+        #     self.fit_scaler("obs")
+        #     self.save_scaler("obs")
 
     def build_index(self):
         # Build index of counts for files
@@ -1470,16 +1485,16 @@ class WeatherYearEnsembleDataset:
                     self.running_min_map = np.minimum(self.running_min_map, min_map)
                     self.running_max_map = np.maximum(self.running_max_map, max_map)
         
-        elif type == "obs": # mean/std normalization
-            valid_times = [x[3] for x in self.data_index]
-            truth = self.obs.sel(time=valid_times)
-            compute_wind_speedxr(truth,"obs")
-            if self.target_variable == "2m_temperature":
-                # detrend temperature
-                truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(truth["2m_temperature"].time.values.astype(np.int64).reshape(-1,1))
-            truth = truth[self.target_variable]
-            self.mean_truth = truth.mean(dim="time").to_array().values.transpose(0,2,1)
-            self.std_truth = truth.std(dim="time").to_array().values.transpose(0,2,1)
+        # elif type == "obs": # mean/std normalization
+        #     valid_times = [x[3] for x in self.data_index]
+        #     truth = self.obs.sel(time=valid_times)
+        #     compute_wind_speedxr(truth,"obs")
+        #     if self.target_variable == "2m_temperature":
+        #         # detrend temperature
+        #         truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(truth["2m_temperature"].time.values.astype(np.int64).reshape(-1,1))
+        #     truth = truth[self.target_variable]
+        #     self.mean_truth = truth.mean(dim="time").to_array().values.transpose(0,2,1)
+        #     self.std_truth = truth.std(dim="time").to_array().values.transpose(0,2,1)
 
 
     def compute_trend_temp(self, type):
@@ -1515,7 +1530,7 @@ class WeatherYearEnsembleDataset:
 
     def save_trend_temp(self, type):
         if type == "obs":
-            joblib.dump(self.trend_truth_model, self.trend_truth_path)
+            joblib.dump(self.trend_model_truth, self.trend_truth_path)
         elif type == "train":
             joblib.dump(self.trend_model, self.trend_path)
     
@@ -1549,16 +1564,16 @@ class WeatherYearEnsembleDataset:
                     )
             ds.to_netcdf(self.scaler_truth_path)
     
-    def load_scaler(self, type):
+    def load_scaler(self, scaler_path, type):
         """Load the scaler from a file."""
         if type == "train":
-            ds = xr.open_dataset(self.scaler_path)
+            ds = xr.open_dataset(scaler_path)
             self.running_min_map = ds["min"].values
             self.running_max_map = ds["max"].values
-        elif type == "obs":
-            ds = xr.open_dataset(self.scaler_truth_path)
-            self.mean_truth = ds["mean"].values
-            self.std_truth = ds["std"].values
+        # elif type == "obs":
+        #     ds = xr.open_dataset(self.scaler_truth_path)
+        #     self.mean_truth = ds["mean"].values
+        #     self.std_truth = ds["std"].values
 
     def __len__(self):
         return len(self.data_index)
@@ -1569,6 +1584,11 @@ class WeatherYearEnsembleDataset:
         data_std = xr.open_dataset(file_std)
         valid_time = pd.to_datetime(valid_time)
         forecast_time = pd.to_datetime(forecast_time)
+        valid_month = valid_time.month
+
+        # load scaler 
+        scaler_path = f"/home/majanvie/scratch/loader_detrend/scaler_temp_month{valid_month}_{self.idx2lead[lead_time_idx]}.nc"
+        self.load_scaler(scaler_path, "train")
         # select forecast data
         if self.subset == "test":
             # rename time to forecast_time
@@ -1576,33 +1596,39 @@ class WeatherYearEnsembleDataset:
             data_std = data_std.rename({'time': 'forecast_time'})
         data_mean = data_mean.isel(prediction_timedelta=lead_time_idx, forecast_time=forecast_idx_in_file)
         data_std = data_std.isel(prediction_timedelta=lead_time_idx, forecast_time=forecast_idx_in_file)
-        truth = self.obs.sel(time=valid_time)
-        land_sea_mask = truth["land_sea_mask"].values.T
+        data_std = data_std.fillna(1)
+        truth = self.obs.sel(time=valid_time).transpose("latitude", "longitude") # initially (lon,lat)
+        land_sea_mask = truth["land_sea_mask"].values[21:,:] # remove Antartica
 
         # compute wind
         compute_wind_speedxr(truth,"obs")
-        
-        # detrend truth temperature data
-        X_truth = truth["2m_temperature"].time.values.astype(np.int64) * 1e-9
-        truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(X_truth.reshape(-1,1))
-        # normalize truth temperature data 
-        truth = truth[["2m_temperature", "10m_wind_speed"]].to_array().values.transpose(0,2,1) # (2, n_lat, n_lon)
-        truth = (truth - self.mean_truth)/self.std_truth
-        truth = torch.tensor(truth[:,1:,:], dtype=torch.float) # 2x120x240
+
+        if self.subset in ["train", "val"]:
+            # detrend truth temperature data
+            X_truth = truth["2m_temperature"].time.values.astype(np.int64) * 1e-9
+            shape = truth["2m_temperature"].shape
+            truth["2m_temperature"] = truth["2m_temperature"] - self.trend_model_truth.predict(X_truth.reshape(-1,1)).reshape(shape[1],shape[0]).T 
+        truth = truth[["2m_temperature", "10m_wind_speed"]].to_array().values # (2, n_lat, n_lon)
+        truth = torch.tensor(truth[:,21:,:], dtype=torch.float) # 2x100x240, crop Antartica
 
         # detrend temperature data
         X_data = data_mean["2m_temperature"].valid_time.values.astype(np.int64) * 1e-9
-        data_mean["2m_temperature"] = data_mean["2m_temperature"] - self.trend_model.predict(X_data.reshape(-1,1))
+        data_mean["2m_temperature"] = data_mean["2m_temperature"] - self.trend_model.predict(X_data.reshape(-1,1)).reshape(data_mean["2m_temperature"].shape)
         # normalize data 
         data = data_mean.to_array().values # (n_vars, n_lat, n_lon)
         data = (data-self.running_min_map)/(self.running_max_map-self.running_min_map + 1e-3)
         data = np.where(np.isnan(data), 0, data)
 
+        # add std data
+        val_std = data_std[["2m_temperature", "10m_wind_speed"]].to_array().values
+        data = np.concatenate([data[:,21:,:], val_std[:,21:,:]], axis=0)
+
         # add land sea mask feature
-        data = np.concatenate([data, land_sea_mask[np.newaxis, ...]], axis=0)
-        data = np.concatenate([data, land_sea_mask[np.newaxis, ...]], axis=0)
-        
-        # add lead time and day of year as features
+        data = np.concatenate([data, land_sea_mask[np.newaxis, ...]], axis=0)  
+        # add lead time and day of year and lat lon as features
+        shapes = data.shape
+        lat = np.ones((shapes[1], shapes[2])) * self.lat_norm[:, np.newaxis]  # Broadcasting along axis 1 (lat)
+        lon = np.ones((shapes[1], shapes[2])) * self.lon_norm[np.newaxis, :]  # Broadcasting along axis 2 (lon)
         lead_time = np.ones((shapes[1], shapes[2])) * (lead_time_idx/7)
         year = valid_time.year
         doy = valid_time.timetuple().tm_yday
@@ -1612,14 +1638,16 @@ class WeatherYearEnsembleDataset:
         data = np.concatenate([data,
             lead_time[np.newaxis, ...],
             sin_day_of_year[np.newaxis, ...],
-            cos_day_of_year[np.newaxis, ...]], axis=0)
-        features = torch.tensor(data[:,1:,:], dtype=torch.float) #70x120x240
+            cos_day_of_year[np.newaxis, ...],
+            lat[np.newaxis, ...],
+            lon[np.newaxis, ...]], axis=0)
+        features = torch.tensor(data, dtype=torch.float) #74x100x240
 
-        # mean std over ensemble predictions for the target variable
-        #mu = torch.tensor(data_mean[self.target_variable].values, dtype=torch.float) # (n_lat, n_lon)
-        #sigma = torch.tensor(data_std[self.target_variable].values, dtype=torch.float) # (n_lat, n_lon)
         valid_time = str(valid_time)
         forecast_time = str(forecast_time)
+        # STOP MEMORY LEAK 
+        data_mean.close() 
+        data_std.close()
         return {
             'input': features, 'truth': truth, "day_of_year": doy,
             'valid_time': valid_time, "lead_time": lead_time_idx, "forecast_time": forecast_time
@@ -1845,6 +1873,7 @@ if __name__== "__main__":
     
     # train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
     # print("Nb of training examples:",len(train_loader.dataset.data_index))
+    # i = 0
     # for batch in train_loader:
     #     print("SHAPES")
     #     print(batch['input'].shape, batch['truth'].shape)
@@ -1852,9 +1881,11 @@ if __name__== "__main__":
     #     print(" ")
 
     #     print("VALUES")
-    #     print(batch["input"][0][0].mean())
+    #     print(batch["input"].min(), batch["input"].max(), batch["input"].mean())
     #     print(batch["truth"])
-    #     break
+    #     if i == 3:
+    #         break
+    #     i +=1 
 
     # test 
     # dtime = time.time()
@@ -1893,13 +1924,10 @@ if __name__== "__main__":
     #     print(" ")
     #     break
 
-    ## DETREND test1 
+    ## DETREND 
     data_folder = "/home/majanvie/scratch/data" 
     train_folder = f"{data_folder}/train/EMOS"
     obs_folder = f"{data_folder}/raw/obs"
-
-    land_sea_mask = xr.open_dataset(f"{obs_folder}/land_sea_mask.nc").land_sea_mask.values.T # (lat, lon)
-    land_sea_mask = torch.tensor(land_sea_mask, dtype=torch.float)
     
     train_dataset = WeatherEnsembleDatasetMMdetrend(
         data_path=train_folder,
@@ -1910,3 +1938,7 @@ if __name__== "__main__":
         valid_months=[1,1],
         subset="train")
     train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+    for batch in train_loader:
+        print("SHAPES")
+        print(batch['input'].shape, batch['truth'].shape, batch["mu"].shape, batch["sigma"].shape)
+        break
