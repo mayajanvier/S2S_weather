@@ -124,13 +124,7 @@ def main_Unet_ens(valid_years, batch_size, lr, nb_epoch, name_experiment, device
     print("device", device)
     criterion = crps_normal
     weights = np.cos(np.deg2rad(train_dataset.latitude)) # (120,)
-    #weights = weights[1:] # (120,)
     weights = weights.reshape(-1, 1) # (120, 1) for broadcasting during multiplication
-    # repeat to match the shape of the grid
-    #weights = np.repeat(weights, 240).reshape(121, 240)
-    #weights = weights[1:,:] # 120x240
-    # batch size: actually not needed, spatial weighting only 
-    #weights = np.repeat(weights[np.newaxis,:,:], batch_size, axis=0) # 120x240 -> 1x120x240 -> batch_sizex120x240
     weights = torch.tensor(weights, dtype=torch.float) # batch_sizex120x240
     weights = weights.to(device)
 
@@ -208,13 +202,7 @@ def main_Unet_ensNorm(valid_years, batch_size, lr, nb_epoch, name_experiment, de
     print("device", device)
     criterion = crps_normal
     weights = np.cos(np.deg2rad(train_dataset.latitude)) # (120,)
-    #weights = weights[1:] # (120,)
     weights = weights.reshape(-1, 1) # (120, 1) for broadcasting during multiplication
-    # repeat to match the shape of the grid
-    #weights = np.repeat(weights, 240).reshape(121, 240)
-    #weights = weights[1:,:] # 120x240
-    # batch size: actually not needed, spatial weighting only 
-    #weights = np.repeat(weights[np.newaxis,:,:], batch_size, axis=0) # 120x240 -> 1x120x240 -> batch_sizex120x240
     weights = torch.tensor(weights, dtype=torch.float) # batch_sizex120x240
     weights = weights.to(device)
 
@@ -292,13 +280,7 @@ def main_Unet_ensPrior(valid_years, batch_size, lr, nb_epoch, name_experiment, d
     print("device", device)
     criterion = crps_normal
     weights = np.cos(np.deg2rad(train_dataset.latitude)) # (120,)
-    #weights = weights[1:] # (120,)
     weights = weights.reshape(-1, 1) # (120, 1) for broadcasting during multiplication
-    # repeat to match the shape of the grid
-    #weights = np.repeat(weights, 240).reshape(121, 240)
-    #weights = weights[1:,:] # 120x240
-    # batch size: actually not needed, spatial weighting only 
-    #weights = np.repeat(weights[np.newaxis,:,:], batch_size, axis=0) # 120x240 -> 1x120x240 -> batch_sizex120x240
     weights = torch.tensor(weights, dtype=torch.float) # batch_sizex120x240
     weights = weights.to(device)
 
@@ -376,13 +358,7 @@ def main_Unet_ensPrior_sep(valid_years, batch_size, lr, nb_epoch, name_experimen
     print("device", device)
     criterion = crps_normal
     weights = np.cos(np.deg2rad(train_dataset.latitude)) # (120,)
-    #weights = weights[1:] # (120,)
     weights = weights.reshape(-1, 1) # (120, 1) for broadcasting during multiplication
-    # repeat to match the shape of the grid
-    #weights = np.repeat(weights, 240).reshape(121, 240)
-    #weights = weights[1:,:] # 120x240
-    # batch size: actually not needed, spatial weighting only 
-    #weights = np.repeat(weights[np.newaxis,:,:], batch_size, axis=0) # 120x240 -> 1x120x240 -> batch_sizex120x240
     weights = torch.tensor(weights, dtype=torch.float) # batch_sizex120x240
     weights = weights.to(device)
 
@@ -463,13 +439,7 @@ def main_Unet_ensNorm_single(valid_years, batch_size, lr, nb_epoch, name_experim
     print("device", device)
     criterion = crps_normal
     weights = np.cos(np.deg2rad(train_dataset.latitude)) # (120,)
-    #weights = weights[1:] # (120,)
     weights = weights.reshape(-1, 1) # (120, 1) for broadcasting during multiplication
-    # repeat to match the shape of the grid
-    #weights = np.repeat(weights, 240).reshape(121, 240)
-    #weights = weights[1:,:] # 120x240
-    # batch size: actually not needed, spatial weighting only 
-    #weights = np.repeat(weights[np.newaxis,:,:], batch_size, axis=0) # 120x240 -> 1x120x240 -> batch_sizex120x240
     weights = torch.tensor(weights, dtype=torch.float) # batch_sizex120x240
     weights = weights.to(device)
 
@@ -548,13 +518,7 @@ def main_Unet_ensPrior_single(valid_years, batch_size, lr, nb_epoch, name_experi
     print("device", device)
     criterion = crps_normal
     weights = np.cos(np.deg2rad(train_dataset.latitude)) # (120,)
-    #weights = weights[1:] # (120,)
     weights = weights.reshape(-1, 1) # (120, 1) for broadcasting during multiplication
-    # repeat to match the shape of the grid
-    #weights = np.repeat(weights, 240).reshape(121, 240)
-    #weights = weights[1:,:] # 120x240
-    # batch size: actually not needed, spatial weighting only 
-    #weights = np.repeat(weights[np.newaxis,:,:], batch_size, axis=0) # 120x240 -> 1x120x240 -> batch_sizex120x240
     weights = torch.tensor(weights, dtype=torch.float) # batch_sizex120x240
     weights = weights.to(device)
 

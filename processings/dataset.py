@@ -1047,8 +1047,6 @@ class WeatherYearEnsembleDatasetNorm:
         data = np.concatenate([data, low_veg_cover[np.newaxis, ...], high_veg_cover[np.newaxis, ...], std_orography[np.newaxis, ...]], axis=0)
         features = torch.tensor(data, dtype=torch.float) #74x120x240 or 77x120x240
 
-        #features = torch.tensor(data, dtype=torch.float) #74x120x240
-
         valid_time = str(valid_time)
         forecast_time = str(forecast_time)
         # STOP MEMORY LEAK 

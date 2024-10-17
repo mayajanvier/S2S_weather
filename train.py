@@ -416,7 +416,6 @@ def trainUNetPrior(train_loader, val_loader, model, nb_epoch, lr, criterion, res
                 val_temp_loss = criterion(val_out_distrib_temp, val_y[:,0,:,:])
                 val_wind_loss = criterion(val_out_distrib_wind, val_y[:,1,:,:])
                 val_weights = weights * val_mask
-                #val_loss_masked = ((val_temp_loss + val_wind_loss)* val_weights).sum() / val_weights.sum() # land sea mask
                 val_loss_masked = (val_temp_loss + val_wind_loss) * val_weights
                 val_loss += val_loss_masked.mean().item()
                 val_loss_temp += (val_temp_loss * val_weights).mean().item()
@@ -505,23 +504,6 @@ def trainUNetPriorSep(variable, train_loader, val_loader, model, nb_epoch, lr, c
         running_loss = 0.0
         running_loss_temp = 0.0
         running_loss_wind = 0.0
-        # test 
-        # for _ in range(20):
-        #     X = torch.rand((64,70,120,240)).to(device)
-        #     y = torch.rand((64,70,120,240)).to(device)
-        #     optimizer.zero_grad()
-        #     maps, out_distrib_temp, out_distrib_wind = model(X) # parameters 
-
-        #     print()
-        #     loss = criterion(out_distrib_temp, y[:,0,:,:]) +  criterion(out_distrib_wind, y[:,1,:,:]) # batch loss
-        #     # weight latitudes
-        #     loss = loss * weights
-        #     loss = loss.mean()
-        #     loss.backward()
-        #     optimizer.step()
-
-        #     running_loss += loss
-        #     print("Loss: ", running_loss)
         i = 0
         for batch in train_loader:
             X = batch['input'].to(device)
@@ -575,7 +557,6 @@ def trainUNetPriorSep(variable, train_loader, val_loader, model, nb_epoch, lr, c
                 val_temp_loss = criterion(val_out_distrib_temp, val_y[:,0,:,:])
                 val_wind_loss = criterion(val_out_distrib_wind, val_y[:,1,:,:])
                 val_weights = weights * val_mask
-                #val_loss_masked = ((val_temp_loss + val_wind_loss)* val_weights).sum() / val_weights.sum() # land sea mask
                 if variable == "2m_temperature":
                     val_loss_masked = val_temp_loss * val_weights
                 elif variable == "10m_wind_speed":
@@ -833,7 +814,6 @@ def trainUNetPriorVar(variable, train_loader, val_loader, model, nb_epoch, lr, c
                 # weight latitudes and mask
                 val_loss_out = criterion(val_out_distrib, val_y)
                 val_weights = weights * val_mask
-                #val_loss_masked = ((val_temp_loss + val_wind_loss)* val_weights).sum() / val_weights.sum() # land sea mask
                 val_loss_masked = val_loss_out * val_weights
                 val_loss += val_loss_masked.mean().item()
 
