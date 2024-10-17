@@ -16,7 +16,7 @@ The `processings` folder contains codes to download (`download_weatherbench2.py`
 You can train the different architectures of this project by running the functions in `main.py`. The corresponding models are defined in `model.py`: 
 - post-processing models: SpatialEMOS (EMOS), DRUNetPrior (DRUnet+prior both), DRUnetPriorVar (DRUnet+prior single)
 - forecasting models: DRUnet (DRUnet both), DRUnetVar (DRUnet single)
-- 
+  
 _Work in progress: DRUnetAll to unify all these variants under a single structure._
 
 Samely, you can run the inference for these models using `inference.py`, as well as compute the baselines results, that is to say the Raw model (IFS) we are trying to post-process and the climatology based on ERA5. 
