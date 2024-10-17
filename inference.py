@@ -110,6 +110,7 @@ def specialSpatialEMOS_inference_detrend(lead_time, valid_years, train_years, na
             final_ds.to_netcdf(results_file_path)
 
 ### DRUNets
+# DRUnet both [Month Lead Agg]
 def DRUnet_inference(valid_years, train_years, train_index, epoch, device):
     data_folder = "/home/majanvie/scratch/data" 
     test_folder = f"{data_folder}/test/EMOS"
@@ -213,6 +214,7 @@ def DRUnet_inference(valid_years, train_years, train_index, epoch, device):
     results_file_path = f"{model_folder}/crps_{epoch}.nc"
     final_ds.to_netcdf(results_file_path)
 
+# DRUNet single [General Agg]
 def DRUnet_inference_Norm_Var(valid_years, train_years, train_index, epoch, device, variable=None):
     data_folder = "/home/majanvie/scratch/data" 
     test_folder = f"{data_folder}/test/EMOS"
@@ -363,6 +365,7 @@ def DRUnet_inference_Norm_Var(valid_years, train_years, train_index, epoch, devi
     results_file_path = f"{model_folder}/crps_{epoch}.nc"
     final_ds.to_netcdf(results_file_path)
 
+# DRUnet+prior both [Month Lead Agg]
 def DRUnet_inference_Prior( valid_years, train_years, train_index, epoch, device, variable=None):
     data_folder = "/home/majanvie/scratch/data" 
     test_folder = f"{data_folder}/test/EMOS"
@@ -473,6 +476,7 @@ def DRUnet_inference_Prior( valid_years, train_years, train_index, epoch, device
     results_file_path = f"{model_folder}/crps_{epoch}.nc"
     final_ds.to_netcdf(results_file_path)
 
+# DRUnet+prior single [Month Lead Agg]
 def DRUnet_inference_Prior_Var(valid_years, train_years, train_index, epoch, device, variable=None):
     data_folder = "/home/majanvie/scratch/data" 
     test_folder = f"{data_folder}/test/EMOS"
