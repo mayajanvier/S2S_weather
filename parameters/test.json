@@ -1,4 +1,0 @@
-{"test_file_path": "../scratch/data/test/PPE_test_lat=-90.0_lon=0.0_lead=24h.json",
-"model_folder": "training_results/training_4_t2m/",
-"model_epoch": 99,
-"metrics": ["crps"]}
