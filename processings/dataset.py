@@ -1060,7 +1060,6 @@ class WeatherYearEnsembleDatasetNorm:
             }   
 
 
-
 if __name__== "__main__":
     ### WeatherYearEnsembleDataset
     # data_folder = "/home/majanvie/scratch/data"
