@@ -42,6 +42,8 @@ class WeatherEnsembleDatasetMMdetrend: # trend x,y
         self.obs = xr.open_mfdataset(obs_path + '/*.nc', combine='by_coords')
         self.latitude = self.obs.latitude.values
         self.longitude = self.obs.longitude.values
+        self.lat_norm = (self.latitude - self.latitude.min())/(self.latitude.max() - self.latitude.min())
+        self.lon_norm = (self.longitude - self.longitude.min())/(self.longitude.max() - self.longitude.min())
 
         # Build index of counts for files
         if os.path.exists(self.index_path):
@@ -280,6 +282,7 @@ class WeatherEnsembleDatasetMMdetrend: # trend x,y
         file_mean, file_std, forecast_idx_in_file, valid_time, forecast_time = self.data_index[idx]
         data_mean = xr.open_dataset(file_mean)
         data_std = xr.open_dataset(file_std)
+        valid_time = pd.to_datetime(valid_time)
         
         # select forecast data
         if self.subset == "test":
@@ -319,9 +322,36 @@ class WeatherEnsembleDatasetMMdetrend: # trend x,y
         data = (data-self.running_min_map)/(self.running_max_map-self.running_min_map + 1e-3)
         data = np.where(np.isnan(data), 0, data)
 
+        # Manage Nan
+        data_mean = data_mean.fillna(0) # temperature is detrended 
+        data_std = data_std.fillna(1)
+        # add std data 
+        val_std = data_std[["2m_temperature", "10m_wind_speed"]].to_array().values
+        data = np.concatenate([data[:,:,:], val_std[:,:,:]], axis=0)
+
         # add land sea mask feature
         data = np.concatenate([data, land_sea_mask[np.newaxis, ...]], axis=0)
-        features = torch.tensor(data, dtype=torch.float) # 67x121x240
+
+        # add spatial and temporal features
+        shapes = data.shape
+        lat = np.ones((shapes[1], shapes[2])) * self.lat_norm[:, np.newaxis]  # Broadcasting along axis 1 (lat)
+        lon = np.ones((shapes[1], shapes[2])) * self.lon_norm[np.newaxis, :]  # Broadcasting along axis 2 (lon)
+        day_of_year = valid_time.timetuple().tm_yday / 366
+        sin_day_of_year = np.ones((shapes[1], shapes[2])) * np.sin(2*np.pi*day_of_year)
+        cos_day_of_year = np.ones((shapes[1], shapes[2])) * np.cos(2*np.pi*day_of_year)
+        data = np.concatenate([data,
+            sin_day_of_year[np.newaxis, ...],
+            cos_day_of_year[np.newaxis, ...],
+            lat[np.newaxis, ...],
+            lon[np.newaxis, ...]], axis=0)
+
+        # Additional "+" features 
+        static = xr.open_dataset("/home/majanvie/scratch/data/raw/obs/static_features.nc").transpose("latitude", "longitude")
+        low_veg_cover, high_veg_cover = static["low_vegetation_cover"].values[:,:] , static["high_vegetation_cover"].values[:,:] 
+        std_orography = static["standard_deviation_of_filtered_subgrid_orography"].values[:,:]
+        std_orography = (std_orography - std_orography.min())/ (std_orography.max() - std_orography.min())
+        data = np.concatenate([data, low_veg_cover[np.newaxis, ...], high_veg_cover[np.newaxis, ...], std_orography[np.newaxis, ...]], axis=0)
+        features = torch.tensor(data, dtype=torch.float) #76x121x240
 
         # Manage Nan
         data_mean = data_mean.fillna(0) # temperature is detrended 
@@ -689,7 +719,7 @@ class WeatherYearEnsembleDataset:
         std_orography = static["standard_deviation_of_filtered_subgrid_orography"].values[self.latitude_beg:,:]
         std_orography = (std_orography - std_orography.min())/ (std_orography.max() - std_orography.min())
         data = np.concatenate([data, low_veg_cover[np.newaxis, ...], high_veg_cover[np.newaxis, ...], std_orography[np.newaxis, ...]], axis=0)
-        features = torch.tensor(data, dtype=torch.float) #74x120x240 or 77x120x240
+        features = torch.tensor(data, dtype=torch.float) # 77x120x240
 
         valid_time = str(valid_time)
         forecast_time = str(forecast_time)
@@ -1045,7 +1075,7 @@ class WeatherYearEnsembleDatasetNorm:
         std_orography = static["standard_deviation_of_filtered_subgrid_orography"].values[self.latitude_beg:,:]
         std_orography = (std_orography - std_orography.min())/ (std_orography.max() - std_orography.min())
         data = np.concatenate([data, low_veg_cover[np.newaxis, ...], high_veg_cover[np.newaxis, ...], std_orography[np.newaxis, ...]], axis=0)
-        features = torch.tensor(data, dtype=torch.float) #74x120x240 or 77x120x240
+        features = torch.tensor(data, dtype=torch.float) #77x120x240
 
         valid_time = str(valid_time)
         forecast_time = str(forecast_time)

@@ -55,7 +55,7 @@ class SpatioTemporalEMOS(nn.Module):
 class DRUnet(nn.Module):
     """ Both variables, forecasting mode
     Distributional regression U-Net from Pic et al.:
-    Inputs: size 121x240 with 66 channels
+    Inputs: size 121x240 with 77 channels
     Architecture:
         - 2 decreasing resolution blocks, 2 increasing resolution blocks 
         with skip connections
@@ -146,7 +146,7 @@ class DRUnet(nn.Module):
 class DRUnetVar(nn.Module):
     """ One variable, forecasting mode
     Distributional regression U-Net from Pic et al.:
-    Inputs: size 121x240 with 66 channels
+    Inputs: size 121x240 with 77 channels
     Architecture:
         - 2 decreasing resolution blocks, 2 increasing resolution blocks 
         with skip connections
@@ -242,7 +242,7 @@ class DRUnetVar(nn.Module):
 class DRUnetPrior(nn.Module):
     """ Both, post-processing mode
     Distributional regression U-Net from Pic et al.:
-    Inputs: size 121x240 with 66 channels
+    Inputs: size 121x240 with 77 channels
     Architecture:
         - 2 decreasing resolution blocks, 2 increasing resolution blocks 
         with skip connections
@@ -333,7 +333,7 @@ class DRUnetPrior(nn.Module):
 class DRUnetPriorVar(nn.Module):
     """ One variable, post-processing mode
     Distributional regression U-Net from Pic et al.:
-    Inputs: size 121x240 with 66 channels
+    Inputs: size 121x240 with 77 channels
     Architecture:
         - 2 decreasing resolution blocks, 2 increasing resolution blocks 
         with skip connections

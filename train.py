@@ -21,7 +21,7 @@ def create_training_folder(name, base_dir='training_results'):
 def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, target_column, batch_size, val_mask, save_every=5):
     # Weight and Biases setup
     if "spatial" in name_experiment:
-        project = "S2S_SpatialEMOS_ensemble"
+        project = "S2S_SpatialEMOS_ensemble+"
         architecture = "SpatialEMOS"
     else:
         project = "S2S_train_MOS"
@@ -60,6 +60,8 @@ def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folde
             optimizer.step()
 
             running_loss += loss
+            if epoch % 10 == 0:
+                print(f'Loss', running_loss)
             del mu, sigma, X, y, out_distrib # free memory
 
         # validation each epoch
@@ -104,7 +106,7 @@ def train(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folde
 def train_sched(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, target_column, batch_size, val_mask, save_every=5, use_sgd=False, momentum=0.9, weight_decay=0):
     # Weight and Biases setup
     if "spatial" in name_experiment:
-        project = "S2S_SpatialEMOS_ensemble"
+        project = "S2S_SpatialEMOS_ensemble+"
         architecture = "SpatialEMOS"
     else:
         project = "S2S_train_MOS"
@@ -194,8 +196,8 @@ def train_sched(train_loader, val_loader, model, nb_epoch, lr, criterion, result
 def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, batch_size, val_mask, weights, device, save_every=5):
     """ Both, forecasting mode"""
     # Weight and Biases setup
-    project = "S2S_Unet_ensemble"
-    architecture = "Unet"
+    project = "S2S_Unet_ensemble+"
+    architecture = "Unet_both"
 
 
     wandb.init(
@@ -342,8 +344,8 @@ def trainUNet(train_loader, val_loader, model, nb_epoch, lr, criterion, result_f
 def trainUNetPrior(train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, batch_size, val_mask, weights, device, save_every=5):
     """ Both, post-processing mode """
     # Weight and Biases setup
-    project = "S2S_Unet_ensemble"
-    architecture = "Unet"
+    project = "S2S_Unet_ensemble+"
+    architecture = "Unet_prior_both"
 
 
     wandb.init(
@@ -473,7 +475,7 @@ def trainUNetPriorSep(variable, train_loader, val_loader, model, nb_epoch, lr, c
     """ Training with both, only temperature or only wind speed losses
     within both architecture, post-processing mode """
     # Weight and Biases setup
-    project = "S2S_Unet_ensemble"
+    project = "S2S_Unet_ensemble+"
     architecture = "Unet"
     print(variable)
 
@@ -619,8 +621,8 @@ def trainUNetPriorSep(variable, train_loader, val_loader, model, nb_epoch, lr, c
 def trainUNetVar(variable, train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, batch_size, val_mask, weights, device, save_every=5):
     """ Single, forecasting mode """
     # Weight and Biases setup
-    project = "S2S_Unet_ensemble"
-    architecture = "Unet"
+    project = "S2S_Unet_ensemble+"
+    architecture = "Unet_single"
     print(variable)
 
 
@@ -737,8 +739,8 @@ def trainUNetVar(variable, train_loader, val_loader, model, nb_epoch, lr, criter
 def trainUNetPriorVar(variable, train_loader, val_loader, model, nb_epoch, lr, criterion, result_folder, name_experiment, batch_size, val_mask, weights, device, save_every=5):
     """ Single, post-processing mode """
     # Weight and Biases setup
-    project = "S2S_Unet_ensemble"
-    architecture = "Unet"
+    project = "S2S_Unet_ensemble+"
+    architecture = "Unet_prior_single"
     print(variable)
 
 
