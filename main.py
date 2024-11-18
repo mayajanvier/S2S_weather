@@ -12,7 +12,7 @@ import xarray as xr
 import numpy as np
 
 ### EMOS ### 
-def main_spatial_ens(variable, lead_time, valid_years, valid_months, batch_size, lr, nb_epoch, name_experiment, base_dir):
+def main_spatial_ens(variable, lead_time, valid_years, valid_months, batch_size, lr, nb_epoch, name_experiment, base_dir, save_every=5):
     """ Train models for this variable, lead_time, 
     on valid months data, for all latitude/longitude """
     data_folder = "/home/majanvie/scratch/data" 
@@ -83,11 +83,11 @@ def main_spatial_ens(variable, lead_time, valid_years, valid_months, batch_size,
         target_column=variable,
         batch_size=batch_size,
         val_mask=land_sea_mask,
-        save_every=5)    
+        save_every=save_every)    
     
 ### DRUNet BOTH ###
 # DRUNet both [Month Lead agg]
-def main_Unet_ens(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir):
+def main_Unet_ens(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir, save_every=5):
     """ Train Unet for wind and temperature, all lead_times, 
     on valid months data, spatially"""
     data_folder = "/home/majanvie/scratch/data" 
@@ -162,10 +162,10 @@ def main_Unet_ens(valid_years, batch_size, lr, nb_epoch, name_experiment, device
         val_mask=land_sea_mask,
         weights = weights,
         device = device,
-        save_every=5)    
+        save_every=save_every)    
 
 # DRUNet both [General Agg]
-def main_Unet_ensNorm(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir):
+def main_Unet_ensNorm(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir, save_every=5):
     """ Train Unet for wind and temperature, all lead_times, 
     on valid months data, spatially"""
     data_folder = "/home/majanvie/scratch/data" 
@@ -240,10 +240,10 @@ def main_Unet_ensNorm(valid_years, batch_size, lr, nb_epoch, name_experiment, de
         val_mask=land_sea_mask,
         weights = weights,
         device = device,
-        save_every=5)    
+        save_every=save_every)    
 
 # DRUNet+prior both [Month Lead Agg] 
-def main_Unet_ensPrior(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir):
+def main_Unet_ensPrior(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir, save_every=5):
     """ Train Unet for wind and temperature, all lead_times, 
     on valid months data, spatially"""
     data_folder = "/home/majanvie/scratch/data" 
@@ -318,10 +318,10 @@ def main_Unet_ensPrior(valid_years, batch_size, lr, nb_epoch, name_experiment, d
         val_mask=land_sea_mask,
         weights = weights,
         device = device,
-        save_every=5)    
+        save_every=save_every)    
 
 # exp both structure, post-processing, month lead agg 
-def main_Unet_ensPrior_sep(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir, variable):
+def main_Unet_ensPrior_sep(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir, variable, save_every=5):
     """ Train Unet for wind and temperature, all lead_times, 
     on valid months data, spatially"""
     data_folder = "/home/majanvie/scratch/data" 
@@ -397,11 +397,11 @@ def main_Unet_ensPrior_sep(valid_years, batch_size, lr, nb_epoch, name_experimen
         val_mask=land_sea_mask,
         weights = weights,
         device = device,
-        save_every=5)    
+        save_every=save_every)    
 
 ### DRUNet SINGLE ###
 # DRUNet single [General Agg]
-def main_Unet_ensNorm_single(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir, variable):
+def main_Unet_ensNorm_single(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir, variable, save_every=5):
     """ Train Unet for wind and temperature, all lead_times, 
     on valid months data, spatially"""
     data_folder = "/home/majanvie/scratch/data" 
@@ -478,10 +478,10 @@ def main_Unet_ensNorm_single(valid_years, batch_size, lr, nb_epoch, name_experim
         val_mask=land_sea_mask,
         weights = weights,
         device = device,
-        save_every=5)    
+        save_every=save_every)    
 
 # DRUNet+prior single [Month Lead Agg]
-def main_Unet_ensPrior_single(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir, variable):
+def main_Unet_ensPrior_single(valid_years, batch_size, lr, nb_epoch, name_experiment, device, base_dir, variable,save_every=1):
     """ Train Unet for wind and temperature, all lead_times, 
     on valid months data, spatially"""
     data_folder = "/home/majanvie/scratch/data" 
@@ -557,7 +557,7 @@ def main_Unet_ensPrior_single(valid_years, batch_size, lr, nb_epoch, name_experi
         val_mask=land_sea_mask,
         weights = weights,
         device = device,
-        save_every=5)    
+        save_every=save_every)    
 
 if __name__ == "__main__":
     # example usage
@@ -587,34 +587,54 @@ if __name__ == "__main__":
                 name_experiment=f"spatial_month{month}_{variable}_lead={lead_idx}",
                 base_dir=base_dir)
 
-    # DRUnet both
-    # base_dir = f"training_results/DRUnet"
+    # DRUnets
+    # base_dir = f"training_results/DRUnet+"
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # print(device)
+    # parser = argparse.ArgumentParser(description="Run spatial month experiment.")
+    # parser.add_argument('-var', '--var', type=str, default="", help="Lead index to use in the experiment")
+    # args = parser.parse_args()
+    # variable = args.var
+
+    # DRUnet both
     # main_Unet_ens(
     #     valid_years=[1996,2017],
     #     batch_size=128, # to compare with EMOS
     #     lr=0.001,
-    #     nb_epoch=10,
-    #     name_experiment=f"DRUnet",
+    #     nb_epoch=20,
+    #     name_experiment=f"DRUnet_both",
     #     device=device,
     #     base_dir=base_dir)
-    
-    # DRUnet+prior single 
-    # parser = argparse.ArgumentParser(description="Run spatial month experiment.")
-    # parser.add_argument('-var', '--var', type=str, required=True, help="Lead index to use in the experiment")
-    # args = parser.parse_args()
-    # variable = args.var
-    # # training
-    # base_dir = f"training_results/DRUnet"
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # print(device)
-    # main_Unet_ensPrior_single(
+
+    # DRUnet prior both
+    # main_Unet_ensPrior(
+    #     valid_years=[1996,2017], 
+    #     batch_size=128, 
+    #     lr=0.001, 
+    #     nb_epoch=20, 
+    #     name_experiment="DRUnet_prior_both", 
+    #     device=device, 
+    #     base_dir=base_dir)
+
+    # DRUnet single forecasting 
+    # main_Unet_ensNorm_single(
     #     valid_years=[1996,2017],
-    #     batch_size=128, # to compare with EMOS
+    #     batch_size=128, 
     #     lr=0.001,
     #     nb_epoch=25,
-    #     name_experiment=f"DRUnet_prior_{variable}",
+    #     name_experiment=f"DRUnet_{variable}",
     #     device=device,
     #     base_dir=base_dir,
     #     variable=variable)
+    
+    # DRUnet+prior single 
+    # main_Unet_ensPrior_single(
+    #     valid_years=[1996,2017],
+    #     batch_size=128, 
+    #     lr=0.001,
+    #     nb_epoch=5,
+    #     name_experiment=f"DRUnet_prior_{variable}",
+    #     device=device,
+    #     base_dir=base_dir,
+    #     variable=variable,
+    #     )

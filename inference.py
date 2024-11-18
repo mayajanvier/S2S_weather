@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from model import SpatialEMOS, DRUnet, DRUnetPrior, DRUnetPriorVar, DRUnetVar
 from torch.distributions import Normal
 from processings.format_data import compute_wind_speedxr
+import argparse
 
 ### MODEL INFERENCES ###
 
@@ -20,16 +21,16 @@ def specialSpatialEMOS_inference_detrend(lead_time, valid_years, train_years, na
     obs_folder = f"{data_folder}/raw/obs"
     climato_folder = f"{obs_folder}/climato"
 
-    base_dir = f"training_results/spatial_month_ensemble_detrend_temp/lead{lead_time}"
+    base_dir = f"training_results/spatial_month_ensemble+/lead{lead_time}"
     full_results = []   
     train_index = 1
     for month in range(1,13):
         print(f"Month {month}")
-        for variable in ["2m_temperature"]: #, "10m_wind_speed"]:
+        for variable in ["2m_temperature", "10m_wind_speed"]:
             if variable == "2m_temperature":
-                epoch = 9
+                epoch = 19
             elif variable == "10m_wind_speed":
-                epoch = 14
+                epoch = 19
             print(f"Variable {variable}")
             model_folder = f"{base_dir}/training_{train_index}_spatial_month{month}_{variable}_lead={lead_time}"
             climato_path = f"{climato_folder}/{variable}_{train_years[0]}_{train_years[-1]}_month{month}_lead{lead_time}.nc"
@@ -46,7 +47,7 @@ def specialSpatialEMOS_inference_detrend(lead_time, valid_years, train_years, na
 
             test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
             # load model weights
-            model = SpatialEMOS(67, 121, 240, 4)
+            model = SpatialEMOS(76, 121, 240, 4)
             model.load_state_dict(torch.load(
                 f"{model_folder}/model_{epoch}.pth"
                 ))
@@ -117,9 +118,9 @@ def DRUnet_inference(valid_years, train_years, train_index, epoch, device):
     obs_folder = f"{data_folder}/raw/obs"
     climato_folder = f"{obs_folder}/climato"
 
-    base_dir = f"training_results/DRUnet"
+    base_dir = f"training_results/DRUnet+"
 
-    model_folder = f"{base_dir}/training_{train_index}_DRUnet"
+    model_folder = f"{base_dir}/training_{train_index}_DRUnet_both"
     climato_path = f"{climato_folder}/{train_years[0]}_{train_years[-1]}.nc"
     climato = xr.open_dataset(climato_path)
     # directement recuperer la ground truth dans le fichier 
@@ -138,7 +139,7 @@ def DRUnet_inference(valid_years, train_years, train_index, epoch, device):
     lat_beg = test_dataset.latitude_beg
 
     # load model weights
-    model = DRUnet(74,4).to(device)
+    model = DRUnet(77,4).to(device)
     model.load_state_dict(torch.load(
         f"{model_folder}/model_{epoch}.pth"
         ))
@@ -221,12 +222,12 @@ def DRUnet_inference_Norm_Var(valid_years, train_years, train_index, epoch, devi
     obs_folder = f"{data_folder}/raw/obs"
     climato_folder = f"{obs_folder}/climato"
 
-    base_dir = f"training_results/DRUnet"
+    base_dir = f"training_results/DRUnet+"
 
     if variable == None:
-        model_folder = f"{base_dir}/training_{train_index}_DRUnet_norm"
+        model_folder = f"{base_dir}/training_{train_index}_DRUnet"
     else:
-        model_folder = f"{base_dir}/training_{train_index}_DRUnet_norm_{variable}"
+        model_folder = f"{base_dir}/training_{train_index}_DRUnet_{variable}"
     climato_path = f"{climato_folder}/{train_years[0]}_{train_years[-1]}.nc"
     climato = xr.open_dataset(climato_path)
     # directement recuperer la ground truth dans le fichier 
@@ -246,10 +247,9 @@ def DRUnet_inference_Norm_Var(valid_years, train_years, train_index, epoch, devi
 
     # load model weights
     if variable == None:
-        model = DRUnet(74,4).to(device)
+        model = DRUnet(77,4).to(device)
     else:
-        # TODO 77,2 
-        model = DRUnetVar(77,4,variable).to(device)
+        model = DRUnetVar(77,2,variable).to(device)
     model.load_state_dict(torch.load(
         f"{model_folder}/model_{epoch}.pth"
         ))
@@ -366,17 +366,14 @@ def DRUnet_inference_Norm_Var(valid_years, train_years, train_index, epoch, devi
     final_ds.to_netcdf(results_file_path)
 
 # DRUnet+prior both [Month Lead Agg]
-def DRUnet_inference_Prior( valid_years, train_years, train_index, epoch, device, variable=None):
+def DRUnet_inference_Prior( valid_years, train_years, train_index, epoch, device):
     data_folder = "/home/majanvie/scratch/data" 
     test_folder = f"{data_folder}/test/EMOS"
     obs_folder = f"{data_folder}/raw/obs"
     climato_folder = f"{obs_folder}/climato"
 
-    base_dir = f"training_results/DRUnet"
-    if variable is None:
-        model_folder = f"{base_dir}/training_{train_index}_DRUnet_prior"
-    else:
-        model_folder = f"{base_dir}/training_{train_index}_DRUnet_prior_{variable}"
+    base_dir = f"training_results/DRUnet+"
+    model_folder = f"{base_dir}/training_{train_index}_DRUnet_prior_both"
     climato_path = f"{climato_folder}/{train_years[0]}_{train_years[-1]}.nc"
     climato = xr.open_dataset(climato_path)
     # directement recuperer la ground truth dans le fichier 
@@ -395,7 +392,7 @@ def DRUnet_inference_Prior( valid_years, train_years, train_index, epoch, device
     lat_beg = test_dataset.latitude_beg
 
     # load model weights
-    model = DRUnetPrior(74,4).to(device)
+    model = DRUnetPrior(77,4).to(device)
     model.load_state_dict(torch.load(
         f"{model_folder}/model_{epoch}.pth"
         ))
@@ -483,7 +480,7 @@ def DRUnet_inference_Prior_Var(valid_years, train_years, train_index, epoch, dev
     obs_folder = f"{data_folder}/raw/obs"
     climato_folder = f"{obs_folder}/climato"
 
-    base_dir = f"training_results/DRUnet"
+    base_dir = f"training_results/DRUnet+"
     if variable is None:
         model_folder = f"{base_dir}/training_{train_index}_DRUnet_prior"
     else:
@@ -766,30 +763,29 @@ if __name__ == "__main__":
     valid_years = [2018,2022]
     train_years = [1996,2017]
     
-    #for lead_time in [39]:
-        #ClimatoModel_inference(lead_time, [2018,2022],train_years=[1996,2017])
-        #RawIFS_inference(lead_time, [2018,2022], [1996,2017])
-        #SpatialEMOS_inference(lead_time, [2018,2022], [1996,2017])
-        #specialSpatialEMOS_inference(lead_time, [2018,2022], [1996,2017], "log_nostd_MM_lead", 73, 19, "2m_temperature") # emos 3
-        #specialSpatialEMOS_inference_detrend(lead_time, [2018,2022], [1996,2017], "log_MM_detrend", 77 , 9, "2m_temperature") # detrend MM 
+    # EMOS 
+    #for lead_time in [7,14,21,28,39]:
+        #ClimatoModel_inference(lead_time, valid_years, train_years=[1996,2017])
+        #RawIFS_inference(lead_time, valid_years, train_years)
+        #specialSpatialEMOS_inference_detrend(lead_time, valid_years, train_years, "", "" , "", "") # detrend MM 
 
+    # DRUNet 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(device)    
-    DRUnet_inference(valid_years, train_years, train_index=6, epoch=9, device=device)
-    DRUnet_inference(valid_years, train_years, train_index=6, epoch=5, device=device)
-
-    # DRUnet+prior single
-    parser = argparse.ArgumentParser(description="Run spatial month experiment.")
-    parser.add_argument('-var', '--var', type=str, required=True, help="Lead index to use in the experiment")
-    parser.add_argument('-id', '--id', type=int, required=True, help="Experiment id")
-    args = parser.parse_args()
-    variable = args.var
-    train_index = args.id
-    valid_years = [2018,2022]
-    train_years = [1996,2017]
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(device)    
-    DRUnet_inference_Prior_Var(valid_years, train_years, train_index=train_index, epoch=10, device=device, variable=variable)
+    print(device)
+    # parser = argparse.ArgumentParser(description="Run spatial month experiment.")
+    # parser.add_argument('-var', '--var', type=str, default="", help="Lead index to use in the experiment")
+    # parser.add_argument('-id', '--id', type=int, required=True, help="Experiment id")
+    # parser.add_argument('-e', '--epoch', type=int, required=True, help="Epoch to use in the experiment")
+    # args = parser.parse_args()
+    # variable = args.var
+    # train_index = args.id  
+    # epoch = args.epoch
+    # print args in single sentence
+    # print("variable:", variable, "train_index:", train_index, "epoch:", epoch)
+    # DRUnet_inference(valid_years, train_years, train_index=train_index, epoch=epoch, device=device) # drunet both     
+    DRUnet_inference_Prior(valid_years, train_years, train_index=5, epoch=5, device=device) # drunet prior both
+    # DRUnet_inference_Norm_Var(valid_years, train_years, train_index=train_index, epoch=epoch, device=device, variable=variable) # drunet single
+    # DRUnet_inference_Prior_Var(valid_years, train_years, train_index=train_index, epoch=epoch, device=device, variable=variable) # DRUnet+prior single
 
 
 
