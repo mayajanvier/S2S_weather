@@ -772,19 +772,19 @@ if __name__ == "__main__":
     # DRUNet 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
-    # parser = argparse.ArgumentParser(description="Run spatial month experiment.")
-    # parser.add_argument('-var', '--var', type=str, default="", help="Lead index to use in the experiment")
-    # parser.add_argument('-id', '--id', type=int, required=True, help="Experiment id")
-    # parser.add_argument('-e', '--epoch', type=int, required=True, help="Epoch to use in the experiment")
-    # args = parser.parse_args()
-    # variable = args.var
-    # train_index = args.id  
-    # epoch = args.epoch
-    # print args in single sentence
-    # print("variable:", variable, "train_index:", train_index, "epoch:", epoch)
+    parser = argparse.ArgumentParser(description="Run spatial month experiment.")
+    parser.add_argument('-var', '--var', type=str, default="", help="Lead index to use in the experiment")
+    parser.add_argument('-id', '--id', type=int, required=True, help="Experiment id")
+    parser.add_argument('-e', '--epoch', type=int, required=True, help="Epoch to use in the experiment")
+    args = parser.parse_args()
+    variable = args.var
+    train_index = args.id  
+    epoch = args.epoch
+    # print args 
+    print("variable:", variable, "train_index:", train_index, "epoch:", epoch)
     # DRUnet_inference(valid_years, train_years, train_index=train_index, epoch=epoch, device=device) # drunet both     
-    DRUnet_inference_Prior(valid_years, train_years, train_index=5, epoch=5, device=device) # drunet prior both
-    # DRUnet_inference_Norm_Var(valid_years, train_years, train_index=train_index, epoch=epoch, device=device, variable=variable) # drunet single
+    # DRUnet_inference_Prior(valid_years, train_years, train_index=train_index, epoch=epoch, device=device) # drunet prior both
+    DRUnet_inference_Norm_Var(valid_years, train_years, train_index=train_index, epoch=epoch, device=device, variable=variable) # drunet single
     # DRUnet_inference_Prior_Var(valid_years, train_years, train_index=train_index, epoch=epoch, device=device, variable=variable) # DRUnet+prior single
 
 

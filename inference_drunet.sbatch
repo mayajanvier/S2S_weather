@@ -25,6 +25,6 @@ date
 
 # SINGLE
 echo "DRUNet single var inf" 
-python inference2.py -var "2m_temperature" -id 4 -e 5 
+python inference.py -var "2m_temperature" -id 4 -e 5 
 echo "Job ended"
 date 
