@@ -9,16 +9,19 @@ We investigated statistical post-processing methods, including deep learning, to
 Figure: CRPSS of 2m temperature at lead 14 days for different methods: top row: raw model and EMOS (Gneiting et al. 2005), bottom row: variants of DRUNet (Pic et al. 2024)
 
 # Repository organisation 
+## Preparing the data
 The `parameter` folder contains the WeatherBench2 paths to the files we used in this study.
 
-The `processings` folder contains codes to download (`download_weatherbench2.py`), format (`format_data.py`) and pre-process this data (`dataset.py`). More instructions in the README file in the folder.  For DRUnet, the [Month Lead Agg] is performed by the WeatherYearEnsembleDataset, while the [General Agg] by the WeatherYearEnsembleDataset. 
+The `processings` folder contains codes to download (`download_weatherbench2.py`), format (`format_data.py`) and pre-process this data (`dataset.py`). Follow the instructions in the README file in the folder before running any experiments. For DRUnet, the [Month Lead Agg] is performed by the WeatherYearEnsembleDataset, while the [General Agg] by the WeatherYearEnsembleDataset. 
 
+## Training models
 You can train the different architectures of this project by running the functions in `main.py`. The corresponding models are defined in `model.py`: 
 - post-processing models: SpatialEMOS (EMOS), DRUNetPrior (DRUnet+prior both), DRUnetPriorVar (DRUnet+prior single)
 - forecasting models: DRUnet (DRUnet both), DRUnetVar (DRUnet single)
   
 _Work in progress: DRUnetAll to unify all these variants under a single structure._
 
+## Evaluating models
 Samely, you can run the inference for these models using `inference.py`, as well as compute the baselines results, that is to say the Raw model (IFS) we are trying to post-process and the climatology based on ERA5. 
 
 You will then be able to visualize the results with the `figures_results.ipynb` notebook. The `figures_data.ipynb` notebook provides some code to visualize our data. 
