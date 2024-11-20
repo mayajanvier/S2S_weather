@@ -138,7 +138,7 @@ if __name__ == "__main__":
 
 
     ### TRAIN AND TEST DATA: ENSEMBLE MEMBERS 
-    # surface destination paths
+    # surface destination paths: change for your own
     train_folder = '/home/majanvie/scratch/data/raw/train_ensemble_surface'
     test_folder = '/home/majanvie/scratch/data/raw/test_ensemble_surface'
 
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     print(f"Extracted train and test data in {time()-time_start:.2f} seconds")
 
 
-    # pressure levels 
+    # pressure levels destination paths: change for your own 
     train_folder = '/home/majanvie/scratch/data/raw/train'
     test_folder = '/home/majanvie/scratch/data/raw/test'
 
