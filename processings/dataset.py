@@ -412,7 +412,7 @@ class WeatherYearEnsembleDataset:
             self.build_index()
             self.save_index()
         
-        # not give original forecast 
+        # not give original forecast (because no scaler) 
         # TODO build scaler trend for them 
         self.data_index = [x for x in self.data_index
                 if x[5] > 0
@@ -1089,88 +1089,65 @@ class WeatherYearEnsembleDatasetNorm:
 
 
 if __name__== "__main__":
-    ### WeatherYearEnsembleDataset
-    # data_folder = "/home/majanvie/scratch/data"
-    # train_folder = f"{data_folder}/train/EMOS"
-    # test_folder = f"{data_folder}/test/EMOS"
-    # obs_folder = "/home/majanvie/scratch/data/raw/obs"
-
-    # dtime = time.time()
-    # train_dataset = WeatherYearEnsembleDataset(
-    #     data_path=train_folder,
-    #     obs_path=obs_folder,
-    #     valid_years=[1996,2017],
-    #     subset="train")
-    # print("dataset time", time.time()-dtime)
-    
-    # train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-    # print("Nb of training examples:",len(train_loader.dataset.data_index))
-    # i = 0
-    # for batch in train_loader:
-    #     print("SHAPES")
-    #     print(batch['input'].shape, batch['truth'].shape)
-    #     print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
-    #     print(" ")
-
-    #     print("VALUES")
-    #     print(batch["input"].min(), batch["input"].max(), batch["input"].mean())
-    #     print(batch["truth"])
-    #     if i == 3:
-    #         break
-    #     i +=1 
-
-    # test 
-    # dtime = time.time()
-    # test_dataset = WeatherYearEnsembleDataset(
-    #     data_path=test_folder,
-    #     obs_path=obs_folder,
-    #     valid_years=[2018,2022],
-    #     subset="test")
-    # print("dataset time", time.time()-dtime)
-    # test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
-    # print("Nb of training examples:",len(test_loader.dataset.data_index))
-    # for batch in test_loader:
-    #     print("SHAPES")
-    #     print(batch['input'].shape, batch['truth'].shape)
-    #     print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
-    #     print(" ")
-    #     print(batch["input"])
-    #     print(batch["input"].min(), batch["input"].max(), batch["input"].mean())
-    #     print(batch["truth"].min(), batch["truth"].max(), batch["truth"].mean())
-    #     break
-
-    # val
-    # dtime = time.time()
-    # val_dataset = WeatherYearEnsembleDataset(
-    #     data_path=train_folder,
-    #     obs_path=obs_folder,
-    #     valid_years=[1996,2017],
-    #     subset="val")
-    # print("dataset time", time.time()-dtime)
-    # val_loader = DataLoader(val_dataset, batch_size=1, shuffle=True)
-    # print("Nb of training examples:",len(val_loader.dataset.data_index))
-    # for batch in val_loader:
-    #     print("SHAPES")
-    #     print(batch['input'].shape, batch['truth'].shape)
-    #     print(batch['forecast_time'], batch['valid_time'], batch['lead_time'])
-    #     print(" ")
-    #     break
-
-    ## DETREND 
+    ## EMOS  
+    # Run once to produce [Month Lead Agg] index, trend and scaler files as well as [Month Lead Agg] climatology
     data_folder = "/home/majanvie/scratch/data" 
     train_folder = f"{data_folder}/train/EMOS"
     obs_folder = f"{data_folder}/raw/obs"
+    test_folder = f"{data_folder}/test/EMOS"
     
-    train_dataset = WeatherEnsembleDatasetMMdetrend(
+    for month in range(1,13):
+        for lead in [7,14,21,28,35,39]:
+            # train index, trend, scaler, climato 
+            train_dataset = WeatherEnsembleDatasetMMdetrend(
+                data_path=train_folder,
+                obs_path=obs_folder,
+                target_variable="2m_temperature",
+                lead_time_idx=lead,
+                valid_years=[1996,2017],
+                valid_months=[month,month],
+                subset="train")
+            # validation index
+            val_dataset = WeatherEnsembleDatasetMMdetrend(
+                data_path=train_folder,
+                obs_path=obs_folder,
+                target_variable="2m_temperature",
+                lead_time_idx=lead,
+                valid_years=[1996,2017],
+                valid_months=[month,month],
+                subset="val")
+            # test index
+            test_dataset = WeatherEnsembleDatasetMMdetrend(
+                data_path=test_folder,
+                obs_path=obs_folder,
+                target_variable="2m_temperature",
+                lead_time_idx=lead,
+                valid_years=[2018,2022],
+                valid_months=[month,month],
+                subset="test")
+            print("Month", month, "Lead", lead)
+            print("Train samples", len(train_dataset), "Validation samples", len(val_dataset),"Test samples", len(test_dataset))
+            train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+            for batch in train_loader:
+                print("SHAPES")
+                print(batch['input'].shape, batch['truth'].shape, batch["mu"].shape, batch["sigma"].shape)
+                break
+
+    # WeatherYearEnsembleDatasetNorm
+    # Run once to produce [General Agg] index and scaler files, as well as DRUnet trend files and [General Agg] climatology
+    train_dataset = WeatherYearEnsembleDatasetNorm(
         data_path=train_folder,
         obs_path=obs_folder,
-        target_variable="2m_temperature",
-        lead_time_idx=14,
         valid_years=[1996,2017],
-        valid_months=[1,1],
         subset="train")
-    train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-    for batch in train_loader:
-        print("SHAPES")
-        print(batch['input'].shape, batch['truth'].shape, batch["mu"].shape, batch["sigma"].shape)
-        break
+    val_dataset = WeatherYearEnsembleDatasetNorm(
+        data_path=train_folder,
+        obs_path=obs_folder,
+        valid_years=[1996,2017],
+        subset="val")
+    test_dataset = WeatherYearEnsembleDatasetNorm(
+        data_path=test_folder,
+        obs_path=obs_folder,
+        valid_years=[2018,2022],
+        subset="test")
+    print("Train samples", len(train_dataset), "Validation samples", len(val_dataset),"Test samples", len(test_dataset))
