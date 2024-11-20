@@ -11,6 +11,7 @@ Figure: CRPSS of 2m temperature at lead 14 days for different methods: top row: 
 # Repository organisation 
 ## Preparing the data
 The `parameter` folder contains the WeatherBench2 paths to the files we used in this study.
+The `obs` folder contains static data useful for our study, from ERA5. 
 
 The `processings` folder contains codes to download (`download_weatherbench2.py`), format (`format_data.py`) and pre-process this data (`dataset.py`). Follow the instructions in the README file in the folder before running any experiments. For DRUnet, the [Month Lead Agg] is performed by the WeatherYearEnsembleDataset, while the [General Agg] by the WeatherYearEnsembleDataset. 
 
@@ -21,7 +22,7 @@ You can train the different architectures of this project by running the functio
 
 _Work in progress: DRUnetAll to unify all these variants under a single structure._
 
-Define your `training_results` folder, and create subfolders for `EMOS` and `DRunet`. For EMOS, also create sub-folders for each lead (`lead7`, `lead14`, etc). It should look like this: 
+In `main.py`, define your `training_results` folder, and create subfolders for `EMOS` and `DRunet`. For EMOS, also create sub-folders for each lead (`lead7`, `lead14`, etc). It should look like this: 
 ![alt text](images/training_results.png)
 
 Update the paths accordingly in the main loop (`base_dir` variable), as well as the `data_folder`, `train_folder`, `obs_folder` in the `mainXXX` routines. 
