@@ -129,7 +129,7 @@ if __name__ == "__main__":
     
     print(f"Extracted observation data in {time()-time_start:.2f} seconds") # 73s
 
-    ### TRAIN AND TEST DATA: AVERAGED ENSEMBLE
+    ### TRAIN AND TEST DATA: AVERAGED ENSEMBLE (no for the study, but can be useful)
     # print("Extracting train and test data:")
     # time_start = time()
     # with ProcessPoolExecutor(6) as exe:
@@ -139,17 +139,17 @@ if __name__ == "__main__":
 
     ### TRAIN AND TEST DATA: ENSEMBLE MEMBERS 
     # surface destination paths
-    # train_folder = '/home/majanvie/scratch/data/raw/train_ensemble_surface'
-    # test_folder = '/home/majanvie/scratch/data/raw/test_ensemble_surface'
+    train_folder = '/home/majanvie/scratch/data/raw/train_ensemble_surface'
+    test_folder = '/home/majanvie/scratch/data/raw/test_ensemble_surface'
 
-    # forecast_train = xr.open_zarr(params["forecast_train_ens_surface"])
-    # forecast_test = xr.open_zarr(params["forecast_test_ens_surface"])
+    forecast_train = xr.open_zarr(params["forecast_train_ens_surface"])
+    forecast_test = xr.open_zarr(params["forecast_test_ens_surface"])
 
-    # print("Extracting train and test data:")
-    # time_start = time()
-    # with ProcessPoolExecutor(6) as exe:
-    #     exe.submit(download_train_test(forecast_train, forecast_test))
-    # print(f"Extracted train and test data in {time()-time_start:.2f} seconds")
+    print("Extracting train and test data:")
+    time_start = time()
+    with ProcessPoolExecutor(6) as exe:
+        exe.submit(download_train_test(forecast_train, forecast_test)) # we get all members
+    print(f"Extracted train and test data in {time()-time_start:.2f} seconds")
 
 
     # pressure levels 
@@ -162,7 +162,7 @@ if __name__ == "__main__":
     print("Extracting train and test data:")
     time_start = time()
     with ProcessPoolExecutor(6) as exe:
-        exe.submit(download_train_test_mean_std(forecast_train, forecast_test))
+        exe.submit(download_train_test_mean_std(forecast_train, forecast_test)) # directly compute and save mean and std
     print(f"Extracted train and test data in {time()-time_start:.2f} seconds")
 
 
