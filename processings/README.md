@@ -8,4 +8,9 @@ The script first downloads observations (ERA5) into the `obs_folder`. Then, we d
 
 3. **Preprocessing:** In order to run the experiments, we need several files: *data indices* containing paths and information about our samples, *trend models* for temperature, *scalers* for data normalisation, and *climatology*. Running `dataset.py` main code will create all of these files. Create the needed folders to store them and setup your own paths in the main code and in the different methods of the dataset classes before running the code. 
 
-You should be setup to go to the `main.py` script and start running experiments. 
+4. Move land_sea_mask.nc and static_features.nc in `obs` in the repository to your `obs_folder`.
+
+You should be setup to go to the `main.py` script and start running experiments.
+
+Overall, your data folders should look like this:
+![alt text](../images/data.png)
