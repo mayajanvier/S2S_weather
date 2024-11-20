@@ -22,7 +22,7 @@ You can train the different architectures of this project by running the functio
 _Work in progress: DRUnetAll to unify all these variants under a single structure._
 
 ## Evaluating models
-Samely, you can run the inference for these models using `inference.py`, as well as compute the baselines results, that is to say the Raw model (IFS) we are trying to post-process and the climatology based on ERA5. 
+Samely, you can run the inference for these models using `inference.py`, as well as compute the baseline results, that is to say the Raw model (IFS) we are trying to post-process. 
 
 You will then be able to visualize the results with the `figures_results.ipynb` notebook. The `figures_data.ipynb` notebook provides some code to visualize our data. 
 
