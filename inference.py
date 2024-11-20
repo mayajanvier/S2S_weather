@@ -292,7 +292,7 @@ def DRUnet_inference_Norm_Var(valid_years, train_years, train_index, epoch, devi
         if variable == "2m_temperature":
             Xt = pd.to_datetime(valid_time).astype(np.int64)[0] * 1e-9
             trend = test_dataset.trend_model_truth.predict(Xt.reshape(-1,1)).reshape(1, 240, 121).transpose(0,2,1)[:,lat_beg:,:]
-            out_distrib_temp.loc += torch.tensor(trend, dtype=out_distrib_temp.loc.dtype).to(device)
+            out_distrib.loc += torch.tensor(trend, dtype=out_distrib.loc.dtype).to(device)
 
         # climato_distrib_temp = Normal(mu_clim_temp.to(device), sigma_clim_temp.to(device))
         # climato_distrib_wind = Normal(mu_clim_wind.to(device), sigma_clim_wind.to(device))
