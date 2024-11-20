@@ -585,7 +585,9 @@ if __name__ == "__main__":
                 lr=0.001,
                 nb_epoch=nb_epochs,
                 name_experiment=f"spatial_month{month}_{variable}_lead={lead_idx}",
-                base_dir=base_dir)
+                base_dir=base_dir,
+                save_every=5,
+                )
 
     # DRUnets
     # base_dir = f"training_results/DRUnet+"
@@ -604,7 +606,8 @@ if __name__ == "__main__":
     #     nb_epoch=20,
     #     name_experiment=f"DRUnet_both",
     #     device=device,
-    #     base_dir=base_dir)
+    #     base_dir=base_dir,
+    # save_every=5)
 
     # DRUnet prior both
     # main_Unet_ensPrior(
@@ -614,7 +617,8 @@ if __name__ == "__main__":
     #     nb_epoch=20, 
     #     name_experiment="DRUnet_prior_both", 
     #     device=device, 
-    #     base_dir=base_dir)
+    #     base_dir=base_dir,
+    #    save_every=5)
 
     # DRUnet single forecasting 
     # main_Unet_ensNorm_single(
@@ -625,7 +629,8 @@ if __name__ == "__main__":
     #     name_experiment=f"DRUnet_{variable}",
     #     device=device,
     #     base_dir=base_dir,
-    #     variable=variable)
+    #     variable=variable,
+    #    save_every=5)
     
     # DRUnet+prior single 
     # main_Unet_ensPrior_single(
@@ -637,4 +642,4 @@ if __name__ == "__main__":
     #     device=device,
     #     base_dir=base_dir,
     #     variable=variable,
-    #     )
+    #     save_every=5)
