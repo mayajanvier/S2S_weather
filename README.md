@@ -11,7 +11,7 @@ Figure: CRPSS of 2m temperature at lead 14 days for different methods: top row: 
 # Repository organisation 
 The `parameter` folder contains the WeatherBench2 paths to the files we used in this study.
 
-The `processings` folder contains codes to download (`download_weatherbench2.py`) and pre-process this data (`dataset.py`). For DRUnet, the [Month Lead Agg] is performed by the WeatherYearEnsembleDataset, while the [General Agg] by the WeatherYearEnsembleDataset. 
+The `processings` folder contains codes to download (`download_weatherbench2.py`), format (`format_data.py`) and pre-process this data (`dataset.py`). More instructions in the README file in the folder.  For DRUnet, the [Month Lead Agg] is performed by the WeatherYearEnsembleDataset, while the [General Agg] by the WeatherYearEnsembleDataset. 
 
 You can train the different architectures of this project by running the functions in `main.py`. The corresponding models are defined in `model.py`: 
 - post-processing models: SpatialEMOS (EMOS), DRUNetPrior (DRUnet+prior both), DRUnetPriorVar (DRUnet+prior single)
